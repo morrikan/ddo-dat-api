@@ -30,8 +30,8 @@ If you want to build and run locally instead of using Docker:
 Clone the repo and run the setup script:
 
 ```bash
-git clone https://github.com/<your-username>/dat-api.git
-cd dat-api
+git clone https://github.com/morrikan/ddo-dat-api.git
+cd ddo-dat-api
 ./run.sh
 ```
 
