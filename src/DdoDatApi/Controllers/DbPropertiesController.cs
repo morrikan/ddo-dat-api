@@ -1,5 +1,4 @@
 ﻿using DdoDatApi.Caching;
-using DdoDatApi.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
 using System.Globalization;
@@ -13,7 +12,7 @@ namespace DdoDatApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("[controller]")]
-public class DbPropertiesController : Controller
+public class DbPropertiesController : ControllerBase
 {
     /// <summary>
     /// Gets a DbProperties collection object. If the ID provided starts with 0x70******, it will be modified
@@ -24,6 +23,7 @@ public class DbPropertiesController : Controller
     /// <returns>The DBProperties object from client_gamelogic.dat</returns>
     [HttpGet("{id}")]
     [ProducesResponseType<IPropertyCollection>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.NotFound)]
     [ProducesResponseType((int)HttpStatusCode.BadRequest)]
     public ActionResult<IPropertyCollection> Get(string id)
     {
@@ -47,7 +47,10 @@ public class DbPropertiesController : Controller
         if (datId < 0x78000000 || datId > 0x79FFFFFF)
             return new BadRequestObjectResult("ID provided not within the valid range");
 
-        return new OkObjectResult(DatSource.PropertyMaster.GetPropertyCollection(datId));
+        var result = DatSource.PropertyMaster.GetPropertyCollection(datId);
+        if (result == null) return new NotFoundResult();
+
+        return new OkObjectResult(result);
     }
 
     [HttpGet("IdsForName")]

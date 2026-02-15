@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
 using System.IO;
-using System.Reflection.Metadata;
 
 namespace DdoDatApi;
 
@@ -20,9 +19,6 @@ public static class Program
             .AddNewtonsoftJson();
 
         builder.Services.RegisterSingletonService<ICacheBuilderService, CacheBuilderService>();
-
-        // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-        builder.Services.AddOpenApi();
 
         builder.Services.AddSwaggerGen(c =>
         {
@@ -40,7 +36,6 @@ public static class Program
         var app = builder.Build();
         app.UseSwagger();
         app.UseSwaggerUI();
-        app.MapOpenApi();
 
         app.UseHttpsRedirection();
         app.MapControllers();

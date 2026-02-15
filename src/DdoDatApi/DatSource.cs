@@ -3,6 +3,7 @@ using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using VoK.Sdk;
@@ -36,6 +37,8 @@ public static class DatSource
     private static IDatFile _mesh;
     private static IPropertyMaster _propertyMaster;
     private static IImageExporter _imageExporter;
+    private static ISoundExporter _soundExporter;
+    private static FileVersionInfo _clientFileInfo;
 
 #if DEBUG
     /// <summary>
@@ -86,6 +89,8 @@ public static class DatSource
 
         _propertyMaster = PropertyMasterFactory.GetPropertyMaster(GameId.DDO, ddoPath);
         _imageExporter = ExporterFactory.GetImageExporter(ddoPath);
+        _soundExporter = ExporterFactory.GetSoundExporter(ddoPath);
+        _clientFileInfo = FileVersionInfo.GetVersionInfo(Path.Combine(ddoPath, "dndclient.exe"));
     }
 
     public static IDatFile GameLogicDat => _gameLogic;
@@ -106,6 +111,8 @@ public static class DatSource
     public static IDatFile Mesh => _mesh;
     public static IPropertyMaster PropertyMaster => _propertyMaster;
     public static IImageExporter ImageExporter => _imageExporter;
+    public static ISoundExporter SoundExporter => _soundExporter;
+    public static FileVersionInfo ClientFileInfo => _clientFileInfo;
     public static List<DatIdRange> IdRanges { get; } = GetIdRanges();
 
     private static List<DatIdRange> GetIdRanges()

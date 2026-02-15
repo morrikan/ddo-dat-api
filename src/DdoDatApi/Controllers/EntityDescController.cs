@@ -10,7 +10,7 @@ namespace DdoDatApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("[controller]")]
-public class EntityDescController : Controller
+public class EntityDescController : ControllerBase
 {
     /// <summary>
     /// Gets an EntityDesc object.

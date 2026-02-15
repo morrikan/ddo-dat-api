@@ -2,5 +2,6 @@
 
 public interface ICacheBuilderService
 {
+    bool IsRunning { get; }
     void Export();
 }

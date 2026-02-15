@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using System.Globalization;
+using System.Net;
 
 namespace DdoDatApi.Controllers;
 
@@ -8,18 +9,17 @@ namespace DdoDatApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("[controller]")]
-public class ImageController : Controller
+public class ImageController : ControllerBase
 {
     /// <summary>
     /// gets a singular image from the SDK's ImageExporter. Does not load from the highres dat.
     /// </summary>
     /// <param name="id">the Id to get. Hexadecimal is best and should have a "0x" prefix. Also supports integers (without "0x"), if need be. Values must be in the range
     /// of a UINT, from 0x78000000 to 0x79FFFFFF</param>
-    /// <returns></returns>
     [HttpGet("{id}")]
-    [ProducesResponseType<FileContentResult>(200)]
-    [ProducesResponseType(400)]
-    [ProducesResponseType(404)]
+    [ProducesResponseType<FileContentResult>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.NotFound)]
+    [ProducesResponseType((int)HttpStatusCode.BadRequest)]
     public IActionResult Get(string id)
     {
         uint datId = 0;

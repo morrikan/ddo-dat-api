@@ -8,6 +8,8 @@ public abstract class ExportService : BackgroundService
 {
     private readonly SemaphoreSlim _signal = new SemaphoreSlim(0); // Used to signal a new task is ready
 
+    public bool IsRunning { get; private set; }
+
     public void Export()
     {
         _signal.Release();
@@ -18,7 +20,15 @@ public abstract class ExportService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             await _signal.WaitAsync(stoppingToken); // Wait for a signal from the controller
-            await Export(stoppingToken);
+            IsRunning = true;
+            try
+            {
+                await Export(stoppingToken);
+            }
+            finally
+            {
+                IsRunning = false;
+            }
         }
     }
 

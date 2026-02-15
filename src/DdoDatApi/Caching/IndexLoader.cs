@@ -1,12 +1,10 @@
-﻿using DdoDatApi.Models;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using VoK.Sdk.Ddo;
 using VoK.Sdk.Ddo.Enums;
 using VoK.Sdk.Enums;
@@ -15,7 +13,7 @@ namespace DdoDatApi.Caching;
 
 public class IndexLoader
 {
-    private static string CachePath => Path.Combine(AppContext.BaseDirectory, "indexcache.json");
+    public static string CachePath => Path.Combine(AppContext.BaseDirectory, "indexcache.json");
 
     public static void RefreshCacheFromDats(CancellationToken token)
     {
@@ -26,15 +24,23 @@ public class IndexLoader
 
         Console.WriteLine($"Building Cache from GameLogic dat file (scanning {glfs.Count} dat objects)...");
         var found = 0;
-        var emitEveryPercent = 5;
-        var lastEmit = 0;
+        var iter = 0;
+        var updateFrequency = TimeSpan.FromSeconds(30);
+        var lastUpdate = DateTime.UtcNow;
 
+#if DEBUG
+        updateFrequency = TimeSpan.FromSeconds(2);
+#endif
+        indexData.ClientVersion = DatSource.ClientFileInfo.FileVersion;
+        indexData.CompiledOnUtc = DateTime.UtcNow;
+        
         foreach (var glf in glfs)
         {
             if (token.IsCancellationRequested) return;
 
             var id = glf.Id;
-            if (id >= 0x70000000 && id < 0x70FFFFFF)
+            iter++;
+            if (id >= 0x70000000 && id < 0x71000000)
                 id += 0x09000000;
 
             if (dbpRange.IsInRange(id))
@@ -66,6 +72,10 @@ public class IndexLoader
                 if (questName != null)
                     indexData.Quests.Add(new QuestIndex() { Id = id, Name = questName.Text });
 
+                var personality = dbp.GetEnumProperty((uint)DdoProperty.SentientPersonality);
+                if (personality != null)
+                    indexData.SentientPersonalities.Add(id);
+
                 if (wt == 0x0000004F)
                 {
                     var canBeUsed = dbp.GetBytePropertyValue((uint)DdoProperty.Usage_CanBeUsed) ?? 0;
@@ -74,16 +84,28 @@ public class IndexLoader
                 }
                 found++;
 
-                var progress = 100 * found / glfs.Count;
-                if (progress >= (lastEmit + emitEveryPercent))
+                if (DateTime.UtcNow > lastUpdate + updateFrequency)
                 {
-                    Console.WriteLine($"{progress}% complete");
-                    lastEmit = progress;
+                    var progress = 100 * iter / glfs.Count;
+                    Console.WriteLine($"Progress: {progress}% ({found} through {iter} of {glfs.Count} objects)");
+                    lastUpdate = DateTime.UtcNow;
                 }
             }
         }
 
         Console.WriteLine($"Successfully built indexes over {found} items in {timer.Elapsed}.");
+
+        Console.WriteLine($"Loading other miscellaneous index data...");
+        indexData.WellKnown.Add("Feat Directory", (uint)Feat.FeatDirectory);
+        indexData.WellKnown.Add("Base Skin Mappings", (uint)Uniquedb.BaseSkinMappings);
+
+        // important to note - unless the SDK is rebuilt/updated, this won't change and get new values
+        foreach (var wc in Enum.GetValues(typeof(Weeniecontent)))
+            if (!indexData.WellKnown.ContainsKey(wc.ToString()))
+                indexData.WellKnown.Add(wc.ToString(), (uint)wc);
+
+        indexData.LastIndexDuration = timer.Elapsed;
+        Console.WriteLine($"Miscellaneous stuff done.");
 
         DatCache.Index = indexData;
         using (StreamWriter sw = File.CreateText(CachePath))

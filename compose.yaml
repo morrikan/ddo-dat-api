@@ -5,7 +5,7 @@ services:
     ports: 
       - 8080:8080
     volumes:
-      - "${DDO_INSTALL_PATH}:/data"
+      - "${DDO_INSTALL_PATH}:/data:ro"
     restart: unless-stopped
 
   mcp-server:
