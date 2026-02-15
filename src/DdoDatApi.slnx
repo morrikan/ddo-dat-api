@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="dockerfile" />
+  </Folder>
+  <Project Path="DdoDatApi/DdoDatApi.csproj" />
+</Solution>
