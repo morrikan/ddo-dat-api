@@ -1,8 +1,12 @@
 ﻿using DdoDatApi.Caching;
+using DdoDatApi.Models;
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Net;
+using VoK.Sdk.Ddo.Enums;
 using VoK.Sdk.Properties;
 
 namespace DdoDatApi.Controllers;
@@ -65,5 +69,106 @@ public class DbPropertiesController : ControllerBase
             return new OkObjectResult(DatCache.Index.Names[name]);
 
         return new OkObjectResult(new List<uint>());
+    }
+
+    /// <summary>
+    /// Gets the number of each type of Weenie in the Index
+    /// </summary>
+    [HttpGet("WeenieTypeCounts")]
+    [ProducesResponseType<List<NamedCounter>>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
+    public IActionResult GetWeenieTypeCounts()
+    {
+        if (DatCache.Index.Names.Count < 1)
+            return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
+
+        var result = DatCache.Index.WeenieTypes.Select(kvp => new NamedCounter()
+        {
+            Id = kvp.Key,
+            Name = Enum.GetName(typeof(WeenieType), kvp.Key) ?? "Undefined",
+            Count = kvp.Value?.Count ?? 0
+        })
+            .OrderBy(nc => nc.Id)
+            .ToList();
+
+        return new OkObjectResult(result);
+    }
+
+    /// <summary>
+    /// Gets all of the DbPropertyIds of the specified weenie type
+    /// </summary>
+    /// <param name="weenieType">Indexed weenie type (hex allowed). Mostly corresponds to <see cref="VoK.Sdk.Ddo.Enums.WeenieType"/>, but often has values outside the enumeration.</param>
+    [HttpGet("ByWeenieType/{weenieType}")]
+    [ProducesResponseType<List<NamedItem>>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.BadRequest, Description = "usually when the provided weenie type could not be converted.")]
+    [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
+    [ProducesResponseType((int)HttpStatusCode.NotFound, Description = "WeenieType is not in the index data.")]
+    public IActionResult GetByWeenieType([FromRoute] string weenieType)
+    {
+        uint wt = 0;
+        if (string.IsNullOrWhiteSpace(weenieType))
+            return BadRequest();
+
+        if (weenieType.StartsWith("0x"))
+        {
+            weenieType = weenieType.Substring(2);
+            if (!uint.TryParse(weenieType, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out wt))
+                return new BadRequestObjectResult("Could not parse the ID provided.");
+        }
+        else
+            if (!uint.TryParse(weenieType, out wt))
+                return new BadRequestObjectResult("Could not parse the ID provided.");
+
+        if (DatCache.Index.Names.Count < 1)
+            return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
+
+        if (!DatCache.Index?.WeenieTypes?.ContainsKey(wt) ?? true)
+            return new NotFoundResult();
+
+        var ids = DatCache.Index.WeenieTypes[wt] ?? new List<uint>();
+        var result = ids.Select(id => new NamedItem() 
+        { 
+            Id = id, 
+            Name = DatCache.Index.NameLookup.ContainsKey(id) ? DatCache.Index.NameLookup[id] : $"0x{id:X8}"
+        })
+            .OrderBy(ni => ni.Id)
+            .ToList();
+        return new OkObjectResult(result);
+    }
+
+    /// <summary>
+    /// Gets all Enhancement Trees from the index, with names.
+    /// </summary>
+    [HttpGet("EnhancementTrees")]
+    [ProducesResponseType<List<NamedItem>>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
+    public IActionResult GetEnhancementTrees()
+    {
+        if (DatCache.Index.EnhancementTrees.Count < 1)
+            return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
+
+        var result = DatCache.Index.EnhancementTrees.Select(id => new NamedItem()
+        {
+            Id = id,
+            Name = DatCache.Index.NameLookup.ContainsKey(id) ? DatCache.Index.NameLookup[id] : $"0x{id:X8}"
+        })
+            .OrderBy(ni => ni.Name)
+            .ToList();
+
+        return new OkObjectResult(result);
+    }
+
+    /// <summary>
+    /// Gets all Treasure Table IDs from the index.
+    /// </summary>
+    [HttpGet("TreasureTables")]
+    [ProducesResponseType<List<uint>>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
+    public IActionResult GetTreasureTables()
+    {
+        if (DatCache.Index.TreasureTables.Count < 1)
+            return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
+
+        return new OkObjectResult(DatCache.Index.TreasureTables);
     }
 }

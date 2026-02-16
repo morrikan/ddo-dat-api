@@ -21,5 +21,4 @@ public static class Extensions
         var prop = propertyCollection.GetEnumProperty((uint)DdoProperty.WeenieType);
         return prop?.UInt32Value ?? 0;
     }
-
 }

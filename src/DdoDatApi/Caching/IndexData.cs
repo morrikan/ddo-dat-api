@@ -39,7 +39,7 @@ public class IndexData
     /// <summary>
     /// List of all quests in the Index.
     /// </summary>
-    public List<QuestIndex> Quests { get; set; } = new();
+    public List<NamedItem> Quests { get; set; } = new();
 
     /// <summary>
     /// List of spells. Technically a duplicate of the WeenieType cache for WeenieType.Spell.
@@ -57,20 +57,32 @@ public class IndexData
     public List<uint> SentientPersonalities { get; set; } = new();
 
     /// <summary>
+    /// Treasure Tables always have a WeenieType of 0, so we'll parse those out in the index
+    /// </summary>
+    public List<uint> TreasureTables { get; set; } = new();
+
+    /// <summary>
+    /// Enhancement Trees have a WeenieType of 0, so we'll have to parse these out manually too
+    /// </summary>
+    public List<uint> EnhancementTrees { get; set;  } = new();
+
+    /// <summary>
     /// How long it took to build the index.
     /// </summary>
     public TimeSpan? LastIndexDuration { get; set; } = null;
 }
 
-public class QuestIndex
+public class NamedItem
 {
     /// <summary>
-    /// DbProperties object ID of the quest.
+    /// DbProperties object ID.
     /// </summary>
     public uint Id { get; set; }
 
+    public string IdHex => $"0x{Id:X8}";
+
     /// <summary>
-    /// Name of the Quest
+    /// Name of the DbProperties Object
     /// </summary>
     public string Name { get; set; }
 }

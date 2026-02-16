@@ -51,7 +51,8 @@ public class IndexLoader
 
                 if (!indexData.WeenieTypes.ContainsKey(wt))
                     indexData.WeenieTypes.Add(wt, new List<uint>());
-                indexData.WeenieTypes[wt].Add(id);
+                if (!indexData.WeenieTypes[wt].Contains(id))
+                    indexData.WeenieTypes[wt].Add(id);
 
                 var name = NameGenerator.GetName(DatSource.PropertyMaster, dbp, null);
                 if (!string.IsNullOrWhiteSpace(name))
@@ -70,11 +71,19 @@ public class IndexLoader
 
                 var questName = dbp.GetStringInfoProperty((uint)DdoProperty.Quest_Name);
                 if (questName != null)
-                    indexData.Quests.Add(new QuestIndex() { Id = id, Name = questName.Text });
+                    indexData.Quests.Add(new NamedItem() { Id = id, Name = questName.Text });
 
                 var personality = dbp.GetEnumProperty((uint)DdoProperty.SentientPersonality);
                 if (personality != null)
                     indexData.SentientPersonalities.Add(id);
+
+                var treasureArray = dbp.GetProperty((uint)DdoProperty.Treasure_Array);
+                if (treasureArray != null)
+                    indexData.TreasureTables.Add(id);
+
+                var enhTree = dbp.GetProperty((uint)DdoProperty.EnhancementTree_Name);
+                if (enhTree != null)
+                    indexData.EnhancementTrees.Add(id);
 
                 if (wt == 0x0000004F)
                 {
