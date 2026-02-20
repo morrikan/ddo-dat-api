@@ -56,6 +56,39 @@ Unless specifically asked, never display these:
 | Physics_EtherealToType | Physics/rendering flag, not gameplay |
 | Physics_PlacementEtherealToType | Physics/rendering flag, not gameplay |
 | Physics_MissilePlacementRaycastEtherealToType | Physics/rendering flag, not gameplay |
+| Item_Value | Never relevant to players |
+| Missile_InitialSpeed | Never relevant to players |
+| Durability_Hardness | Never relevant to players |
+| Inventory_AmmoType | Players know this intrinsically |
+| Combat_AttackType | Players know this intrinsically |
+
+### Conditional properties
+
+Only show these when the condition is met:
+
+| Property | Show when |
+|----------|-----------|
+| Inventory_Encumbrance | Value > 999 |
+| MaxDurability_Base | Value > 100 |
+| Material | Not Steel and not Wood |
+
+### Weapon damage line
+
+Combine `BaseWeaponDamageDiceModifier`, `DamageValue`, `DamageFlags`, `Combat_CriticalHitRange`, and `Combat_CriticalHitMod` into a single **Damage** line. Do not show these as separate properties.
+
+Format: `{modifier}[{dice}] {type} {21 - CriticalHitRange}-20x{CriticalHitMod}`
+- **Modifier**: if `BaseWeaponDamageDiceModifier` is 1.0, omit it and the brackets. Just show the dice.
+- **Type**: first value from `DamageFlags` (e.g., Slash, Pierce)
+
+Examples:
+- `3.6[2d6] Pierce 19-20x3` — modifier != 1: show modifier, brackets around dice
+- `2d6 Slash 17-20x3` — modifier = 1: no modifier, no brackets
+
+### Hit/Damage ability
+
+Combine `Combat_HitAbilityMod_Multiple` and `Combat_DamageAbilityMod_Multiple` into a single **Hit/Dmg Ability** line. Truncate each ability name to 3 characters.
+
+Example: `Dex/Dex`, `Str/Str`, `Dex/Str`
 
 ### Integer display
 
