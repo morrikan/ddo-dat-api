@@ -17,6 +17,7 @@ namespace DdoDatApi;
 
 public static class DatSource
 {
+    // having problems finding your DDO path automatically? set it here!
     private const string _ddoInstallPath = null;
 
     private static IDatFile _gameLogic;
@@ -66,7 +67,7 @@ public static class DatSource
 
     public static void Load()
     {
-        var ddoPath = GetDdoMainInstallPath() ?? _ddoInstallPath;
+        var ddoPath = string.IsNullOrWhiteSpace(_ddoInstallPath) ? GetDdoMainInstallPath() : _ddoInstallPath;
         if (string.IsNullOrEmpty(ddoPath))
             throw new ArgumentException("Unable to locate DDO installation. Set the path in DatSource.cs");
 

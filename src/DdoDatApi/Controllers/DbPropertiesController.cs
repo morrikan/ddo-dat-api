@@ -57,6 +57,10 @@ public class DbPropertiesController : ControllerBase
         return new OkObjectResult(result);
     }
 
+    /// <summary>
+    /// Looks in the cache for objects of the matching name.
+    /// </summary>
+    /// <returns>List of IDs</returns>
     [HttpGet("IdsForName")]
     [ProducesResponseType<List<uint>>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]

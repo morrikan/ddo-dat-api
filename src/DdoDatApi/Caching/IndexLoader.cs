@@ -63,7 +63,9 @@ public class IndexLoader
 
                     if (!indexData.Names.ContainsKey(name))
                         indexData.Names.Add(name, new List<uint>());
-                    indexData.Names[name].Add(id);
+
+                    if (!indexData.Names[name].Contains(id))
+                        indexData.Names[name].Add(id);
                 }
 
                 if (wt == (uint)WeenieType.Spell)

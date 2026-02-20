@@ -1,4 +1,5 @@
 using DdoDatApi.Caching;
+using DdoDatApi.Converters;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,7 +17,10 @@ public static class Program
         // Add services to the container.
 
         builder.Services.AddControllers()
-            .AddNewtonsoftJson();
+            .AddNewtonsoftJson(options =>
+            {
+                options.SerializerSettings.Converters.Add(new IPropertyJsonConverter());
+            });
 
         builder.Services.RegisterSingletonService<ICacheBuilderService, CacheBuilderService>();
 

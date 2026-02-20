@@ -1,5 +1,8 @@
 # .env file is generated for the docker image
 .env
+ddodatapi.log.txt
+openapi3.json
+.claude/settings.local.json
 
 
 ## Ignore Visual Studio temporary files, build results, and
