@@ -1,6 +1,8 @@
 # DDO Dat Reader API
 
-A web API for reading and querying data from [Dungeons & Dragons Online](https://www.ddo.com/) client `.dat` files. Paired with an MCP (Model Context Protocol) server, enabling AI assistants to look up game data such as items, spells, NPCs, quests, images, and sounds.
+An AI-powered tool for exploring [Dungeons & Dragons Online](https://www.ddo.com/) game data. Ask questions about items, spells, NPCs, quests, enhancement trees, loot tables, and more — and get answers pulled directly from the game's client files.
+
+Under the hood, a .NET web API reads DDO's `.dat` files and exposes them over HTTP. An MCP (Model Context Protocol) bridge connects the API to Claude Code (or any MCP-compatible AI agent), so you can query game data conversationally instead of digging through raw files.
 
 ## What It Does
 
