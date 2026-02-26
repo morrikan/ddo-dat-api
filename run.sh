@@ -19,10 +19,9 @@ if [ "$USE_DOCKER" = false ]; then
     exit 1;
   fi
 
-  echo "Building / Running the API project directly..."
-  dotnet run --project ./src/DdoDatApi/DdoDatApi.csproj -c DEBUG > ddodatapi.log.txt 2>&1 &
-  disown
-  echo "dotnet running in background (log: ddodatapi.log.txt)"
+  echo "Building / Running the API project in a new window..."
+  start "DDO Dat API" bash -c "dotnet run --project ./src/DdoDatApi/DdoDatApi.csproj -c DEBUG 2>&1 | tee ddodatapi.log.txt"
+  echo "dotnet running in separate window (log: ddodatapi.log.txt)"
 else
   echo "Building / Running the project in docker..."
 
@@ -55,20 +54,15 @@ done
 curl -s http://localhost:5138/swagger/v1/swagger.json -o openapi3.json
 echo "Saved OpenAPI schema to openapi3.json"
 
-API_PID=$(netstat -ano | grep LISTENING | grep :5138 | awk '{print $5}' | head -1)
-echo "API running on PID $API_PID"
-
 start http://localhost:5138/swagger
 
 claude mcp remove ddo-dat-api
 claude mcp add ddo-dat-api -- cmd //c npx -y mcp-openapi-schema openapi3.json --api-base-url http://localhost:5138/
 
-
 claude
 
-echo "Stopping API (PID $API_PID)..."
-if [ "$USE_DOCKER" = false ]; then
-  taskkill /PID "$API_PID" /F 2>/dev/null
-else
+if [ "$USE_DOCKER" = true ]; then
+  echo "Stopping docker container..."
   docker stop dat-api-server 2>/dev/null
 fi
+echo "API window can be closed manually, or will stop when its window is closed."

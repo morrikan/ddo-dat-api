@@ -67,6 +67,9 @@ The index is saved to disk as `indexcache.json` and loaded automatically on subs
 | `/DbProperties/ByWeenieType/{weenieType}` | GET | List objects of a given weenie type |
 | `/DbProperties/EnhancementTrees` | GET | List all enhancement trees |
 | `/DbProperties/TreasureTables` | GET | List all treasure table IDs |
+| `/DbProperties/Search` | POST | Search objects by keyword/regex patterns |
+| `/Strings/{table}/{key}` | GET | Look up a localized string by table and key ID |
+| `/Set/{setId}` | GET | Get a set bonus entry by SetBonus_ID |
 | `/EntityDesc/{id}` | GET | Get an EntityDesc object by ID |
 | `/Image/{id}` | GET | Get a PNG image by ID |
 | `/Sound/{id}` | GET | Get sound metadata by ID |
