@@ -6,18 +6,18 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 using VoK.Sdk.Ddo.Enums;
 using VoK.Sdk.Properties;
 
 namespace DdoDatApi.Controllers;
 
 /// <summary>
-/// Handles loading 0x70* / 0x79* objects from client_gamelogic.dat.
+/// Handles loading 0x70* / 0x78* / 0x79* objects from client_gamelogic.dat.
 /// </summary>
 [ApiController]
 [Route("[controller]")]
-public class DbPropertiesController : ControllerBase
-{
+public class DbPropertiesController : ControllerBase {
     /// <summary>
     /// Gets a DbProperties collection object. If the ID provided starts with 0x70******, it will be modified
     /// to be 0x79******.
@@ -29,21 +29,19 @@ public class DbPropertiesController : ControllerBase
     [ProducesResponseType<IPropertyCollection>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.NotFound)]
     [ProducesResponseType((int)HttpStatusCode.BadRequest)]
-    public ActionResult<IPropertyCollection> Get(string id)
-    {
+    public ActionResult<IPropertyCollection> Get(string id) {
         uint datId = 0;
         if (string.IsNullOrWhiteSpace(id))
             return BadRequest();
 
-        if (id.StartsWith("0x"))
-        {
+        if (id.StartsWith("0x")) {
             id = id.Substring(2);
             if (!uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out datId))
                 return new BadRequestObjectResult("Could not parse the ID provided.");
         }
         else
             if (!uint.TryParse(id, out datId))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
+            return new BadRequestObjectResult("Could not parse the ID provided.");
 
         if (datId >= 0x70000000 && datId < 0x71000000)
             datId += 0x09000000;
@@ -64,8 +62,7 @@ public class DbPropertiesController : ControllerBase
     [HttpGet("IdsForName")]
     [ProducesResponseType<List<uint>>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
-    public IActionResult GetByName([FromQuery] string name)
-    {
+    public IActionResult GetByName([FromQuery] string name) {
         if (DatCache.Index.Names.Count < 1)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
 
@@ -81,13 +78,11 @@ public class DbPropertiesController : ControllerBase
     [HttpGet("WeenieTypeCounts")]
     [ProducesResponseType<List<NamedCounter>>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
-    public IActionResult GetWeenieTypeCounts()
-    {
+    public IActionResult GetWeenieTypeCounts() {
         if (DatCache.Index.Names.Count < 1)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
 
-        var result = DatCache.Index.WeenieTypes.Select(kvp => new NamedCounter()
-        {
+        var result = DatCache.Index.WeenieTypes.Select(kvp => new NamedCounter() {
             Id = kvp.Key,
             Name = Enum.GetName(typeof(WeenieType), kvp.Key) ?? "Undefined",
             Count = kvp.Value?.Count ?? 0
@@ -107,21 +102,19 @@ public class DbPropertiesController : ControllerBase
     [ProducesResponseType((int)HttpStatusCode.BadRequest, Description = "usually when the provided weenie type could not be converted.")]
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
     [ProducesResponseType((int)HttpStatusCode.NotFound, Description = "WeenieType is not in the index data.")]
-    public IActionResult GetByWeenieType([FromRoute] string weenieType)
-    {
+    public IActionResult GetByWeenieType([FromRoute] string weenieType) {
         uint wt = 0;
         if (string.IsNullOrWhiteSpace(weenieType))
             return BadRequest();
 
-        if (weenieType.StartsWith("0x"))
-        {
+        if (weenieType.StartsWith("0x")) {
             weenieType = weenieType.Substring(2);
             if (!uint.TryParse(weenieType, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out wt))
                 return new BadRequestObjectResult("Could not parse the ID provided.");
         }
         else
             if (!uint.TryParse(weenieType, out wt))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
+            return new BadRequestObjectResult("Could not parse the ID provided.");
 
         if (DatCache.Index.Names.Count < 1)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
@@ -130,11 +123,11 @@ public class DbPropertiesController : ControllerBase
             return new NotFoundResult();
 
         var ids = DatCache.Index.WeenieTypes[wt] ?? new List<uint>();
-        var result = ids.Select(id => new NamedItem() 
-        { 
-            Id = id, 
-            Name = DatCache.Index.NameLookup.ContainsKey(id) ? DatCache.Index.NameLookup[id] : $"0x{id:X8}"
-        })
+        var result = ids
+            .Select(id => new NamedItem() {
+                Id = id,
+                Name = DatCache.Index.NameLookup.ContainsKey(id) ? DatCache.Index.NameLookup[id] : $"0x{id:X8}"
+            })
             .OrderBy(ni => ni.Id)
             .ToList();
         return new OkObjectResult(result);
@@ -146,13 +139,11 @@ public class DbPropertiesController : ControllerBase
     [HttpGet("EnhancementTrees")]
     [ProducesResponseType<List<NamedItem>>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
-    public IActionResult GetEnhancementTrees()
-    {
+    public IActionResult GetEnhancementTrees() {
         if (DatCache.Index.EnhancementTrees.Count < 1)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
 
-        var result = DatCache.Index.EnhancementTrees.Select(id => new NamedItem()
-        {
+        var result = DatCache.Index.EnhancementTrees.Select(id => new NamedItem() {
             Id = id,
             Name = DatCache.Index.NameLookup.ContainsKey(id) ? DatCache.Index.NameLookup[id] : $"0x{id:X8}"
         })
@@ -168,11 +159,66 @@ public class DbPropertiesController : ControllerBase
     [HttpGet("TreasureTables")]
     [ProducesResponseType<List<uint>>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
-    public IActionResult GetTreasureTables()
-    {
+    public IActionResult GetTreasureTables() {
         if (DatCache.Index.TreasureTables.Count < 1)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
 
         return new OkObjectResult(DatCache.Index.TreasureTables);
+    }
+
+    /// <summary>
+    /// Searches the cache for objects whose names match the provided words.
+    /// Each word can be a regex pattern or a plain substring. The score represents
+    /// the percentage of input words that matched.
+    /// </summary>
+    [HttpPost("Search")]
+    [ProducesResponseType<List<SearchResult>>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+    [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
+    public IActionResult Search([FromBody] SearchRequest request) {
+        if (request?.Words == null || request.Words.Count < 1)
+            return BadRequest("At least one search word is required.");
+
+        if (DatCache.Index.NameLookup.Count < 1)
+            return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
+
+        int numResults = request.NumResults ?? 20;
+
+        // Pre-compile regexes for each word
+        var regexes = new List<Regex>();
+        foreach (var word in request.Words) {
+            try {
+                regexes.Add(new Regex(word, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100)));
+            }
+            catch (ArgumentException) {
+                return BadRequest($"Invalid regex pattern: {word}");
+            }
+        }
+
+        var results = new List<SearchResult>();
+
+        foreach (var kvp in DatCache.Index.NameLookup) {
+            int matchCount = 0;
+            for (int i = 0; i < request.Words.Count; i++) {
+                if (regexes[i].IsMatch(kvp.Value) || kvp.Value.Contains(request.Words[i], StringComparison.OrdinalIgnoreCase))
+                    matchCount++;
+            }
+
+            if (matchCount > 0) {
+                results.Add(new SearchResult {
+                    Id = kvp.Key,
+                    Name = kvp.Value,
+                    Score = (float)matchCount / request.Words.Count
+                });
+            }
+        }
+
+        var sorted = results
+            .OrderByDescending(r => r.Score)
+            .ThenBy(r => r.Id)
+            .Take(numResults)
+            .ToList();
+
+        return new OkObjectResult(sorted);
     }
 }

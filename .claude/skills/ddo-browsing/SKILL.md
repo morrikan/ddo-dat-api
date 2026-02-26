@@ -19,11 +19,11 @@ When the user asks "what types of objects exist?" or wants to browse a category:
 When the user asks about enhancement trees, enhancements, or class trees:
 
 1. `curl -s "http://localhost:5138/DbProperties/EnhancementTrees"` — returns `{id, idHex, name}` for every tree.
-2. For details on a specific tree: `curl -s "http://localhost:5138/DbProperties/<id>"` — use `ddo-property-rendering` to display.
+2. For details on a specific tree: `curl -s "http://localhost:5138/DbProperties/<id>"` — use `ddo-describe` to display.
 
 ## Treasure Tables
 
 When the user asks about loot, treasure, or drop tables:
 
 1. `curl -s "http://localhost:5138/DbProperties/TreasureTables"` — returns an array of IDs.
-2. For details: `curl -s "http://localhost:5138/DbProperties/<id>"` — use `ddo-property-rendering` to display.
+2. For details: `curl -s "http://localhost:5138/DbProperties/<id>"` — use `ddo-describe` to display.
