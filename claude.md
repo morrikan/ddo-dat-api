@@ -103,6 +103,10 @@ Indent nested array content so the hierarchy is visually clear.
 
 For any property named like `Item_SetBonus_*`, call `/Set/{value}` to look up the set entry, and display the `SetBonus_Name` from the result.
 
+### Weight
+
+`Inventory_Encumbrance` is stored in tenths of a pound. Divide by 100 and display as `X lbs` (e.g., 5000 → 50 lbs).
+
 ### Augment slots
 
 Only count augment slots that have an `Augment_SlotName` property value. Slots without a name don't count.

@@ -10,7 +10,7 @@ Resolve the value of an Effect equation property by walking its child properties
 ## When to Use
 
 - You need the resolved value of `Effect_Display1_Equation`, `Effect_Display2_Equation`, `Effect_Display3_Equation`, or `Effect_Display4_Equation`
-- Typically invoked with the context of an effect's properties and/or a parent DbProperties object
+- A Mod has an `Equation` child property that scales its operand
 
 ## Input
 
@@ -41,9 +41,22 @@ valueDriver    = equation child property value of Equation_ValueDriver
 solution       = equation child property value of Equation_Solution
 baseValue      = equation child property value of Equation_ValueDriverBaseBonus ?? 0
 multiplier     = equation child property value of Equation_ValueDriverMultiplier ?? 1
+driverLocation = equation child property value of Equation_ValueDriverLocation
 
 if valueDriver is present and non-zero:
-    driverProp = equation child property whose ID matches the valueDriver value
+    if driverLocation == "Source" (0x03):
+        // Look up the driver property on the item's Context Properties
+        driverProp = context property whose propertyId matches the valueDriver value
+    else:
+        // Default/Target (0x04): look in the equation's own children
+        driverProp = equation child property whose ID matches the valueDriver value
+        // If not found in equation children, fall back to context
+        if driverProp is null:
+            driverProp = context property whose propertyId matches the valueDriver value
+
+    if driverProp is null:
+        return empty/null
+
     return baseValue + (driverProp.value * multiplier)
 ```
 
@@ -84,5 +97,8 @@ if levelDriver and progression are both present and non-zero:
 ## Notes
 
 - `Equation_Solution` is a property ID naming the target stat being modified — it is NOT the result value. The actual result comes from the Value Driver or Level Driver paths.
+- `Equation_ValueDriverLocation` controls where the Value Driver property is looked up:
+  - `Source` (`0x03`): look on the **item's Context Properties** (the item being instantiated)
+  - `Target` (`0x04`) or absent: look in the **equation's own children** first, then fall back to context
 - The progression array is 1-indexed: a `levelDriverValue` of 1 maps to `properties[0]`.
 - When the level driver property can't be found in either the equation or the item context, return empty/null rather than guessing. This can be reinvestigated if it causes problems.

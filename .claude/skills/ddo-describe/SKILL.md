@@ -24,7 +24,19 @@ Response shape:
 
 ## Display
 
-Follow the **Property Display** rules in `CLAUDE.md` for rendering property types, hidden/conditional properties, weapon damage, etc.
+Follow the **Property Display** rules in `claude.md` for rendering property types, hidden/conditional properties, weapon damage, etc.
+
+## Static Mutators
+
+Before processing `Effect_OnCreationEffects`, apply these three static mutator effects to the item's Context Properties. Each is a Weenie containing Mods with Equations driven by `Treasure_BaseLevel`:
+
+| Mutator | WeenieId | What it does |
+|---------|----------|-------------|
+| Minimum Level | `0x79029FD6` | Sets `Usage_MinLevel` = Treasure_BaseLevel |
+| Item Hardness | `0x7902B139` | Adds to `Durability_Hardness` and `MaxDurability_Effect` |
+| Item Value | `0x7902B13A` | Adds to `Item_Value` |
+
+Process these using the same **ddo-resolve-effect** algorithm. Their Mods use `Equation_ValueDriverLocation = Source`, meaning the Value Driver looks up properties on the item being instantiated (Context Properties), not on the equation's own children.
 
 ## Effects
 

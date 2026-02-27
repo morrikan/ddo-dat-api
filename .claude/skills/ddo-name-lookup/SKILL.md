@@ -7,20 +7,6 @@ description: Use when the user asks about a specific named thing — an item, mo
 
 Look up Weenies by name, disambiguate when multiple matches exist, then show full details.
 
-## Flow
-
-```dot
-digraph name_lookup {
-  "Search by name" -> "Deduplicate IDs";
-  "Deduplicate IDs" -> "Exactly 1?" [label="yes"];
-  "Deduplicate IDs" -> "2+ matches?" [label="no"];
-  "Exactly 1?" -> "Fetch full details (ddo-describe)";
-  "2+ matches?" -> "Show disambiguation list";
-  "Show disambiguation list" -> "User picks one";
-  "User picks one" -> "Fetch full details (ddo-describe)";
-}
-```
-
 ## Steps
 
 1. **Search**: `curl -s "http://localhost:5138/DbProperties/IdsForName?name=<term>"`
@@ -29,8 +15,8 @@ digraph name_lookup {
 2. **Single result**: Fetch with `ddo-describe` skill and show full details.
 
 3. **Multiple results**: Show a disambiguation list. For each of the first 5 unique IDs, fetch `http://localhost:5138/DbProperties/<id>` and extract only:
-   - **Name**: property with `"name": "Name"` — its `value` (String)
-   - **Type**: property with `"name": "WeenieType"` — its `enumValue` (Enum)
-   - **Description**: property with `"name": "Item_Description"` — its `value` (StringInfo)
+   - **Name**: property with `propertyName: "Name"` — its `value` (String)
+   - **Type**: property with `propertyName: "WeenieType"` — its `enumValue` (Enum)
+   - **Description**: property with `propertyName: "Item_Description"` — its `text` (StringInfo)
 
    Group results by category (e.g., all Missiles together, all Spells together, all Effects together). Present as a numbered list showing each object's `propertyCollectionId` in hex. If more than 5 unique IDs, add a "Show more" option. Stop and wait for the user to pick one.

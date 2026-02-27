@@ -69,7 +69,7 @@ These are bitwise operations on a BitField property in Context Properties.
 
 #### Resolving the Effect Name
 
-After processing Mods, build replacements from the display equations and resolve the name:
+After processing Mods, build replacements from the display equations and resolve both the name and description:
 
 ```
 replacements = []
@@ -79,7 +79,10 @@ for N in [1, 2, 3, 4]:
         rep = ddo-eval-equation(equation, context=Context Properties)
         if rep is not null/empty: replacements.append(rep)
 
-return ddo-stringinfo(Effect Properties[Effect_Name], replacements, context=Context Properties)
+name        = ddo-stringinfo(Effect Properties[Effect_Name], replacements, context=Context Properties)
+description = ddo-stringinfo(Effect Properties[Effect_Description], replacements, context=Context Properties)
+
+return { name, description }
 ```
 
-`Effect_DisplayN_Equation` properties may not all be present — only evaluate those that exist.
+`Effect_DisplayN_Equation` properties may not all be present — only evaluate those that exist. The same replacements array applies to both `Effect_Name` and `Effect_Description`.

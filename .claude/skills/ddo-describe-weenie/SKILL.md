@@ -20,7 +20,7 @@ Response shape:
 
 ## Display
 
-Follow the **Property Display** rules in `CLAUDE.md` for rendering property types, hidden/conditional properties, weapon damage, etc.
+Follow the **Property Display** rules in `claude.md` for rendering property types, hidden/conditional properties, weapon damage, etc.
 
 ## Effect_OnCreationEffects
 

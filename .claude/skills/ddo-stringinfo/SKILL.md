@@ -31,7 +31,7 @@ Resolve a StringInfo property into its final display text by looking up the stri
    }
    ```
 
-2. **Substitute placeholders**: for each `{#}` token in `value`, replace it with the corresponding entry from the provided Replacements. Do not validate that the number of `{#}` tokens matches the length of `placeHolders` or Replacements arrays.
+2. **Substitute placeholders**: for each `{#}` token in `value`, replace it with the corresponding entry from the provided Replacements.
 
 3. **Clean up**: strip any remaining `()` tokens and surrounding whitespace from the result.
 
