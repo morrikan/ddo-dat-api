@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.Globalization;
 using VoK.Sdk.Common;
 using VoK.Sdk.Properties;
 
@@ -24,19 +23,8 @@ public class EntityDescController : ControllerBase
     [ProducesResponseType(400)]
     public IActionResult Get(string id)
     {
-        uint datId = 0;
-        if (string.IsNullOrWhiteSpace(id))
-            return BadRequest();
-
-        if (id.StartsWith("0x"))
-        {
-            id = id.Substring(2);
-            if (!uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out datId))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
-        }
-        else
-            if (!uint.TryParse(id, out datId))
-            return new BadRequestObjectResult("Could not parse the ID provided.");
+        if (!id.IsValid(out var datId, out var error))
+            return error;
 
         var ed = EntityDesc.Load(DatSource.GameLogicDat, datId, DatSource.PropertyMaster);
         if (ed == null) return new NotFoundResult();

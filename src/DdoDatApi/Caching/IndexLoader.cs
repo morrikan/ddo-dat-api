@@ -8,16 +8,19 @@ using System.Threading;
 using VoK.Sdk.Ddo;
 using VoK.Sdk.Ddo.Enums;
 using VoK.Sdk.Enums;
+using VoK.Sdk.Properties;
 
 namespace DdoDatApi.Caching;
 
-public class IndexLoader
-{
+public class IndexLoader {
     public static string CachePath => Path.Combine(AppContext.BaseDirectory, "indexcache.json");
+    public static string TreasureMapPath => Path.Combine(AppContext.BaseDirectory, "treasuremap.json");
+    public static string RecipeMapPath => Path.Combine(AppContext.BaseDirectory, "recipemap.json");
 
-    public static void RefreshCacheFromDats(CancellationToken token)
-    {
+    public static void RefreshCacheFromDats(CancellationToken token) {
         var indexData = new IndexData();
+        var treasureMap = new Dictionary<uint, List<uint>>();
+        var recipeMap = new Dictionary<uint, List<RecipeData>>();
         var glfs = DatSource.GameLogicDat.FileList;
         var dbpRange = DatSource.IdRanges.FirstOrDefault(r => r.Name == ObjectType.DbProperties.ToString());
         var timer = Stopwatch.StartNew();
@@ -33,9 +36,8 @@ public class IndexLoader
 #endif
         indexData.ClientVersion = DatSource.ClientFileInfo.FileVersion;
         indexData.CompiledOnUtc = DateTime.UtcNow;
-        
-        foreach (var glf in glfs)
-        {
+
+        foreach (var glf in glfs) {
             if (token.IsCancellationRequested) return;
 
             var id = glf.Id;
@@ -43,8 +45,7 @@ public class IndexLoader
             if (id >= 0x70000000 && id < 0x71000000)
                 id += 0x09000000;
 
-            if (dbpRange.IsInRange(id))
-            {
+            if (dbpRange.IsInRange(id)) {
                 var dbp = DatSource.PropertyMaster.GetPropertyCollection(id);
                 if (dbp == null) continue;
                 var wt = dbp.GetWeenieType();
@@ -55,8 +56,7 @@ public class IndexLoader
                     indexData.WeenieTypes[wt].Add(id);
 
                 var name = NameGenerator.GetName(DatSource.PropertyMaster, dbp, null);
-                if (!string.IsNullOrWhiteSpace(name))
-                {
+                if (!string.IsNullOrWhiteSpace(name)) {
                     if (!indexData.NameLookup.ContainsKey(id))
                         indexData.NameLookup.Add(id, name);
                     // some ids are duplicates? what's up with that?
@@ -80,23 +80,31 @@ public class IndexLoader
                     indexData.SentientPersonalities.Add(id);
 
                 var treasureArray = dbp.GetProperty((uint)DdoProperty.Treasure_Array);
-                if (treasureArray != null)
+                if (treasureArray != null) {
                     indexData.TreasureTables.Add(id);
+                    var items = new List<uint>();
+                    CollectTreasureItems(dbp.Properties.Values, items, new HashSet<uint> { id });
+                    if (items.Count > 0)
+                        treasureMap[id] = items;
+                }
 
                 var enhTree = dbp.GetProperty((uint)DdoProperty.EnhancementTree_Name);
                 if (enhTree != null)
                     indexData.EnhancementTrees.Add(id);
 
-                if (wt == 0x0000004F)
-                {
+                if (wt == 0x0000004F) {
                     var canBeUsed = dbp.GetBytePropertyValue((uint)DdoProperty.Usage_CanBeUsed) ?? 0;
                     if (canBeUsed > 0)
                         indexData.NPCs.Add(id);
                 }
+
+                if (wt == 0x00200081 && !string.IsNullOrWhiteSpace(name) && !IsExcludedDevice(name)) {
+                    CollectRecipes(dbp, id, name, recipeMap);
+                }
+
                 found++;
 
-                if (DateTime.UtcNow > lastUpdate + updateFrequency)
-                {
+                if (DateTime.UtcNow > lastUpdate + updateFrequency) {
                     var progress = 100 * iter / glfs.Count;
                     Console.WriteLine($"Progress: {progress}% ({found} through {iter} of {glfs.Count} objects)");
                     lastUpdate = DateTime.UtcNow;
@@ -119,45 +127,150 @@ public class IndexLoader
         Console.WriteLine($"Miscellaneous stuff done.");
 
         DatCache.Index = indexData;
-        using (StreamWriter sw = File.CreateText(CachePath))
-        using (JsonTextWriter writer = new JsonTextWriter(sw))
-        {
-            // Wrap the StreamWriter in a JsonSerializer
-            JsonSerializer serializer = new JsonSerializer();
-            writer.Formatting = Formatting.Indented;
+        DatCache.TreasureMap = treasureMap;
+        DatCache.RecipeMap = recipeMap;
 
-            // Serialize the object directly into the file stream
-            serializer.Serialize(writer, indexData);
-        }
-
-        var fileInfo = new FileInfo(CachePath);
-        var kb = fileInfo.Length / 1024;
-        var mb = kb / 1024;
-        var sizeStr = mb > 0 ? $"{mb}MB" : $"{kb}kb";
-        Console.WriteLine($"Successfully saved indexing data ({sizeStr}) to {CachePath}");
-
+        SaveJson(CachePath, indexData, "indexing data");
+        SaveJson(TreasureMapPath, treasureMap, "treasure map");
+        SaveJson(RecipeMapPath, recipeMap, "recipe map");
     }
 
-    public static void LoadIndexCache()
-    {
-        if (!File.Exists(CachePath))
-            return;
+    private static void SaveJson(string path, object data, string label) {
+        using (StreamWriter sw = File.CreateText(path))
+        using (JsonTextWriter writer = new JsonTextWriter(sw)) {
+            JsonSerializer serializer = new JsonSerializer();
+            writer.Formatting = Formatting.Indented;
+            serializer.Serialize(writer, data);
+        }
 
-        var fileInfo = new FileInfo(CachePath);
+        var fileInfo = new FileInfo(path);
+        var kb = fileInfo.Length / 1024;
+        var mb = kb / 1024;
+        var sizeStr = mb > 0 ? $"{mb}MB" : $"{kb}kb";
+        Console.WriteLine($"Saved {label} ({sizeStr}) to {path}");
+    }
+
+    private static void CollectTreasureItems(IEnumerable<IProperty> properties, List<uint> items, HashSet<uint> visited) {
+        foreach (var prop in properties) {
+            if (prop.PropertyId == (uint)DdoProperty.Treasure_Entity && prop is IInt32Property i32) {
+                var val = (uint)(i32.Int32Value ?? 0);
+                if (val == 0 || !visited.Add(val))
+                    continue;
+
+                var child = DatSource.PropertyMaster.GetPropertyCollection(val);
+                if (child == null)
+                    continue;
+
+                if (child.GetWeenieType() == 0)
+                    CollectTreasureItems(child.Properties.Values, items, visited);
+                else {
+                    var normalized = val >= 0x70000000 && val < 0x71000000 ? val + 0x09000000 : val;
+                    if (!items.Contains(normalized))
+                        items.Add(normalized);
+                }
+            }
+            else if (prop is IArrayProperty arr) {
+                CollectTreasureItems(arr.Properties, items, visited);
+            }
+        }
+    }
+
+    private static readonly string[] ExcludedDevicePrefixes =
+    {
+        "Ruby of", "Diamond of", "Topaz of", "Sapphire of",
+        "Tome of", "Fragmented Tome of", "Upgrade Tome of",
+        "Dust of", "+5 Ability", "Augments: Level",
+        "Ability Score", "Test "
+    };
+
+    private static bool IsExcludedDevice(string name) {
+        foreach (var prefix in ExcludedDevicePrefixes)
+            if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    private static void CollectRecipes(IPropertyCollection device, uint deviceId, string deviceName, Dictionary<uint, List<RecipeData>> recipeMap) {
+        var recipeList = device.GetArrayProperty((uint)DdoProperty.Device_Recipe_List);
+        if (recipeList == null) return;
+
+        foreach (var entry in recipeList.Properties) {
+            if (entry.PropertyId != (uint)DdoProperty.Device_Recipe_Entry || entry is not IInt32Property recipeRef)
+                continue;
+
+            var recipeId = (uint)(recipeRef.Int32Value ?? 0);
+            if (recipeId == 0) continue;
+
+            var recipe = DatSource.PropertyMaster.GetPropertyCollection(recipeId);
+            if (recipe == null) continue;
+
+            var recipeName = recipe.GetStringInfoProperty((uint)DdoProperty.Recipe_Name)?.Text;
+            var recipeDesc = recipe.GetStringInfoProperty((uint)DdoProperty.Recipe_Description)?.Text;
+
+            var recipeData = new RecipeData {
+                RecipeId = recipeId >= 0x70000000 && recipeId < 0x71000000 ? recipeId + 0x09000000 : recipeId,
+                Name = recipeName,
+                DeviceId = deviceId,
+                DeviceName = deviceName
+            };
+
+            var slotList = recipe.GetArrayProperty((uint)DdoProperty.Recipe_Slot_List);
+            if (slotList == null) continue;
+
+            foreach (var slot in slotList.Properties) {
+                if (slot.PropertyId != (uint)DdoProperty.Recipe_Slot_Entry || slot is not IInt32Property slotRef)
+                    continue;
+
+                var slotDefId = (uint)(slotRef.Int32Value ?? 0);
+                if (slotDefId == 0) continue;
+
+                var slotDef = DatSource.PropertyMaster.GetPropertyCollection(slotDefId);
+                if (slotDef == null) continue;
+
+                var ingredientProp = slotDef.GetProperty((uint)DdoProperty.Ingredient_Entity) as IInt32Property;
+                if (ingredientProp == null) continue;
+
+                var itemId = (uint)(ingredientProp.Int32Value ?? 0);
+                if (itemId == 0) continue;
+
+                var normalizedItemId = itemId >= 0x70000000 && itemId < 0x71000000 ? itemId + 0x09000000 : itemId;
+
+                if (!recipeMap.ContainsKey(normalizedItemId))
+                    recipeMap.Add(normalizedItemId, new List<RecipeData>());
+
+                if (!recipeMap[normalizedItemId].Any(r => r.RecipeId == recipeData.RecipeId))
+                    recipeMap[normalizedItemId].Add(recipeData);
+            }
+        }
+    }
+
+    public static void LoadIndexCache() {
+        if (File.Exists(CachePath)) {
+            DatCache.Index = LoadJson<IndexData>(CachePath, "indexing data");
+        }
+
+        if (File.Exists(TreasureMapPath)) {
+            DatCache.TreasureMap = LoadJson<Dictionary<uint, List<uint>>>(TreasureMapPath, "treasure map");
+        }
+
+        if (File.Exists(RecipeMapPath)) {
+            DatCache.RecipeMap = LoadJson<Dictionary<uint, List<RecipeData>>>(RecipeMapPath, "recipe map");
+        }
+    }
+
+    private static T LoadJson<T>(string path, string label) {
+        var fileInfo = new FileInfo(path);
         var kb = fileInfo.Length / 1024;
         var mb = kb / 1024;
         var sizeStr = mb > 0 ? $"{mb}MB" : $"{kb}kb";
 
-        using (FileStream fileStream = File.Open(CachePath, FileMode.Open))
+        using (FileStream fileStream = File.Open(path, FileMode.Open))
         using (StreamReader streamReader = new StreamReader(fileStream))
-        using (JsonTextReader jsonReader = new JsonTextReader(streamReader))
-        {
+        using (JsonTextReader jsonReader = new JsonTextReader(streamReader)) {
             JsonSerializer serializer = new JsonSerializer();
-            var index = serializer.Deserialize<IndexData>(jsonReader);
-            DatCache.Index = index;
-
-            // You can now work with the 'movie' object
-            Console.WriteLine($"Loaded Indexing data ({sizeStr}) from {CachePath}");
+            var data = serializer.Deserialize<T>(jsonReader);
+            Console.WriteLine($"Loaded {label} ({sizeStr}) from {path}");
+            return data;
         }
     }
 }

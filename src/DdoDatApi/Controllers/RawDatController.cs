@@ -1,7 +1,6 @@
 using DdoDatApi.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Net;
 
 namespace DdoDatApi.Controllers;
@@ -16,19 +15,8 @@ public class RawDatController : ControllerBase
     [ProducesResponseType((int)HttpStatusCode.NotFound)]
     public IActionResult Get(DatFileType dat, string id)
     {
-        uint datId = 0;
-        if (string.IsNullOrWhiteSpace(id))
-            return BadRequest();
-
-        if (id.StartsWith("0x"))
-        {
-            id = id.Substring(2);
-            if (!uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out datId))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
-        }
-        else
-            if (!uint.TryParse(id, out datId))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
+        if (!id.IsValid(out var datId, out var error))
+            return error;
 
         var contents = (dat switch
         {

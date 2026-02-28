@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using System.Globalization;
 using System.Linq;
 using System.Net;
 using VoK.Sdk.Enums;
@@ -30,17 +29,8 @@ public class SetController : ControllerBase {
     [ProducesResponseType((int)HttpStatusCode.NotFound)]
     [ProducesResponseType((int)HttpStatusCode.BadRequest)]
     public IActionResult Get([FromRoute] string setId) {
-        uint id;
-        if (string.IsNullOrWhiteSpace(setId))
-            return BadRequest();
-
-        if (setId.StartsWith("0x")) {
-            setId = setId.Substring(2);
-            if (!uint.TryParse(setId, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out id))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
-        }
-        else if (!uint.TryParse(setId, out id))
-            return new BadRequestObjectResult("Could not parse the ID provided.");
+        if (!setId.IsValid(out var id, out var error))
+            return error;
 
         if (SetBonusMaster == null)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);

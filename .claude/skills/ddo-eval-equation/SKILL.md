@@ -57,7 +57,7 @@ if valueDriver is present and non-zero:
     if driverProp is null:
         return empty/null
 
-    return baseValue + (driverProp.value * multiplier)
+    return floor(baseValue + (driverProp.value * multiplier))
 ```
 
 ### Step 2: Level Driver + Progression Path

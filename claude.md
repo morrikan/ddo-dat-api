@@ -61,16 +61,6 @@ Unless specifically asked, never display these:
 | Inventory_AmmoType | Players know this intrinsically |
 | Combat_AttackType | Players know this intrinsically |
 
-### Conditional properties
-
-Only show these when the condition is met:
-
-| Property | Show when |
-|----------|-----------|
-| Inventory_Encumbrance | Value > 999 |
-| MaxDurability_Base | Value > 100 |
-| Material | Not Steel and not Wood |
-
 ### Weapon damage line
 
 Combine `BaseWeaponDamageDiceModifier`, `DamageValue`, `DamageFlags`, `Combat_CriticalHitRange`, and `Combat_CriticalHitMod` into a single **Damage** line. Do not show these as separate properties.
@@ -111,15 +101,104 @@ For any property named like `Item_SetBonus_*`, call `/Set/{value}` to look up th
 
 Only count augment slots that have an `Augment_SlotName` property value. Slots without a name don't count.
 
+### Recipes
+
+Fetch recipes for the item via `GET /Recipe/ForItem/{id}`. If the array is empty, omit the Recipes section entirely. If recipes exist, group them by `deviceName` from the response. For each group, show a heading with the device name, then for each recipe fetch its full data via `/DbProperties/{recipeId}` and display as a table with these columns:
+
+| Column | Source |
+|--------|--------|
+| Cost | `Recipe_Slot_List` → each `Recipe_Slot_Entry` reference name (exclude the item itself) |
+| Removed | `Recipe_Result_RemoveMutations` → each `Recipe_Result_MutationDID` reference name |
+| Added | `Recipe_Result_AddMutations` → each `Recipe_Result_MutationDID` reference name |
+
+## Display Fields by WeenieType
+
+When displaying an object, show only the fields listed for its WeenieType (in order). Fields not listed here should be omitted unless the user specifically asks.
+
+Render the primary fields (everything except Effects, Recipes, Augment Slots, and Set Bonuses) in a two-column table with **Field** and **Value** columns. Effects, Augment Slots, Set Bonuses, and Recipes are multi-value sections — display those as lists or sub-tables below the main table.
+
+### Augment (`0x000D0081`)
+
+1. Name
+2. Augment Type (`Augment_SlotTypes`)
+3. Minimum Level (`Usage_MinLevel`)
+4. Rarity
+5. Bind Status
+6. Description (`Item_Description`)
+7. Effects (resolved from `Effect_OnCreationEffects` and `Augment_OnEquipEffects`, skip `0x00000000` entries)
+8. Set Bonus (`SentientFiligreeSetBonus` — filigrees only)
+9. Weight (`Inventory_Encumbrance` ÷ 100)
+10. Max Stack Size (`Inventory_MaxStackSize`)
+
+### Jewelry / Clothing (`0x00070081`, `0x00030081`)
+
+1. Name
+2. Slot (derived from `Inventory_DefaultSlot` — e.g., Finger, Wrists, Neck, Trinket)
+3. Minimum Level (`Usage_MinLevel`)
+4. Binding (`Inventory_IsBoundOnAcquire`, `Inventory_IsBoundOnEquip`, `Inventory_BoundToAccount`)
+5. Description (`Item_Description`)
+6. Effects (resolved `Effect_OnCreationEffects`)
+7. Augment Slots (named slots from `Augment_SlotArray` + effect-created slots)
+8. Set Bonuses (`Item_SetBonus_1`, `Item_SetBonus_2`)
+9. Material (`Material`)
+10. Durability (`MaxDurability_Base`)
+11. Weight (`Inventory_Encumbrance` ÷ 100)
+12. Recipes (see Recipes rendering rules)
+
+### Shield (`0x00010081`)
+
+1. Name
+2. Shield Type (`Combat_ShieldType` — e.g., Buckler, Small Shield, Large Shield, Tower Shield)
+3. Minimum Level (`Usage_MinLevel`)
+4. Binding (`Inventory_IsBoundOnAcquire`, `Inventory_IsBoundOnEquip`, `Inventory_BoundToAccount`)
+5. Shield Bonus (`Combat_ShieldBonus`)
+6. Max Dex Bonus (`Combat_MaxDexBonus` — omit if 99 or higher, that means no cap)
+7. Damage Reduction (`Combat_BlockingDamageReduction`)
+8. Armor Check Penalty (`Combat_SkillCheckPenalty` — show as negative; omit if 0)
+9. Arcane Spell Failure (`Spell_SpellFailureChance` — show as percentage; omit if 0)
+10. Damage (combined line — see Weapon damage line rules; this is shield-bash damage)
+11. Hit/Dmg Ability (combined line — see Hit/Damage ability rules)
+12. Description (`Item_Description`)
+13. Effects (resolved `Effect_OnCreationEffects`)
+14. Augment Slots (named slots from `Augment_SlotArray` + effect-created slots)
+15. Set Bonuses (`Item_SetBonus_1`, `Item_SetBonus_2`)
+16. Material (`Material`)
+17. Durability (`MaxDurability_Base`)
+18. Weight (`Inventory_Encumbrance` ÷ 100)
+19. Recipes (see Recipes rendering rules)
+
+### Weapon (`0x00020081`) — melee and ranged
+
+1. Name
+2. Weapon Type (`Combat_WeaponType`)
+3. Damage (combined line — see Weapon damage line rules)
+4. Hit/Dmg Ability (combined line — see Hit/Damage ability rules)
+5. Handedness (two-handed if `Inventory_PrecludedSlot` includes Weapon2)
+6. Minimum Level (`Usage_MinLevel`)
+7. Binding (`Inventory_IsBoundOnAcquire`, `Inventory_IsBoundOnEquip`, `Inventory_BoundToAccount`)
+8. Accepts Sentience (`AcceptsSentience`)
+9. Description (`Item_Description`)
+10. Effects (resolved `Effect_OnCreationEffects`)
+11. Augment Slots (named slots from `Augment_SlotArray` + effect-created slots)
+12. Set Bonuses (`Item_SetBonus_1`, `Item_SetBonus_2`)
+13. Material (`Material`)
+14. Durability (`MaxDurability_Base`)
+15. Weight (`Inventory_Encumbrance` ÷ 100)
+16. Recipes (see Recipes rendering rules)
+
 ## API
 
 Base URL: `http://localhost:5138`. Use `curl -s` to call them.
 
 ## Behavior
 
-Act immediately on user queries — don't describe steps, present plans, or ask permission to proceed.
+Ask once per query if the user wants to see a plan or just have it execute.
 
 If you don't know something about DDO game mechanics, say so rather than guessing.
+
+## SDK
+
+When looking for a property in C# code with access to the SDK, reference it by ID rather than by name. The ID is in the `DdoProperty` enum. Access it on a property collection with `GetProperty((uint)DdoProperty.{name})`.
 
 ## Common Patterns
 
@@ -138,6 +217,7 @@ Project-specific skills in `.claude/skills/` handle the main workflows:
 | `ddo-name-lookup` | User asks about a named thing |
 | `ddo-describe` | Displaying full details of a game object (simulates instantiation) |
 | `ddo-describe-weenie` | Displaying raw Weenie template data (no effect processing) |
+| `ddo-treasure-mutation` | Instantiating items from treasure tables (difficulty-scaled named items) |
 | `ddo-resolve-effect` | Resolving an effect into a human-readable name |
 | `ddo-eval-equation` | Evaluating Effect_Display equations |
 | `ddo-stringinfo` | Processing StringInfo with placeholder replacements |
@@ -147,3 +227,17 @@ Project-specific skills in `.claude/skills/` handle the main workflows:
 | `ddo-media` | Images, sounds |
 | `ddo-cache` | Checking if data is loaded |
 | `ddo-search` | Searching by keyword or pattern |
+
+## Preferences
+- Don't guess property types from the SDK — ask the user, then check the nuget packages XML docs. Don't decompile it.
+- Don't try to read the DdoProperty enum (too large, crashes)
+- Assume enum values exist unless compilation fails
+- Use `id.IsValid(out var parsedId, out var error)` extension for ID parsing in the Dat API
+- Prefer fields in a table (Field/Value), with multi-value sections (effects, recipes, augments) below
+- Use `.editorconfig` settings for brackets when generating C# code
+
+## API Gotchas
+- **Set bonus lookup**: `/Set/{value}` takes the uint value (e.g., `0x00000105`), NOT the enum name
+- **Material**: `Material` is an Int32 referencing a DbProperties object. Fetch via `/DbProperties/{value}` and read `Material_Name` (StringInfo) for the display name
+- **Equation result rounding**: `floor(baseValue + driverProp.value * multiplier)` — always floor the result
+- **JSON Parsing**: use `jq` to parse json values instead of piping things through python

@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.Globalization;
 using System.Net;
 using VoK.Sdk.Properties;
 
@@ -20,27 +19,10 @@ public class StringsController : Controller {
     [ProducesResponseType((int)HttpStatusCode.BadRequest, Description = "parse error on IDs")]
     [ProducesResponseType((int)HttpStatusCode.NotFound, Description = "could not find values in dat file")]
     public IActionResult Get([FromRoute] string table, [FromRoute] string key) {
-
-        uint keyId = 0;
-        uint tableId = 0;
-
-        if (key.StartsWith("0x")) {
-            key = key.Substring(2);
-            if (!uint.TryParse(key, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out keyId))
-                return new BadRequestObjectResult("Could not parse the key ID provided.");
-        }
-        else
-            if (!uint.TryParse(key, out keyId))
-            return new BadRequestObjectResult("Could not parse the key ID provided.");
-
-        if (table.StartsWith("0x")) {
-            table = table.Substring(2);
-            if (!uint.TryParse(table, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out tableId))
-                return new BadRequestObjectResult("Could not parse the table ID provided.");
-        }
-        else
-            if (!uint.TryParse(table, out tableId))
-            return new BadRequestObjectResult("Could not parse the table ID provided.");
+        if (!key.IsValid(out var keyId, out var error))
+            return error;
+        if (!table.IsValid(out var tableId, out error))
+            return error;
 
 
         var info = DatSource.PropertyMaster.GetStringEntry(keyId, tableId);

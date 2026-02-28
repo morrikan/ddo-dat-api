@@ -26,6 +26,18 @@ Response shape:
 
 Follow the **Property Display** rules in `claude.md` for rendering property types, hidden/conditional properties, weapon damage, etc.
 
+### Material Lookup
+
+`Material` is an `Int32` property whose value is a DbProperties ID (e.g., `0x70000AF3`). To get the display name, fetch `/DbProperties/{value}` and read the `Material_Name` (StringInfo) property's `text` field. Common materials: Steel, Wood, Leather, Mithral, Adamantine, etc.
+
+### Set Bonus Lookup
+
+`Item_SetBonus_1` / `Item_SetBonus_2` are `Enum` properties with both `enumValue` (name) and `value` (uint). The `/Set/{id}` endpoint takes the **uint value** (e.g., `/Set/0x00000105`), NOT the enum name string. Read `SetBonus_Name` from the response for display.
+
+### Recipes
+
+Fetch recipes via `GET /Recipe/ForItem/{id}`. If the response is an empty array, omit the Recipes section entirely.
+
 ## Static Mutators
 
 Before processing `Effect_OnCreationEffects`, apply these three static mutator effects to the item's Context Properties. Each is a Weenie containing Mods with Equations driven by `Treasure_BaseLevel`:

@@ -3,7 +3,6 @@ using DdoDatApi.Models;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -29,19 +28,9 @@ public class DbPropertiesController : ControllerBase {
     [ProducesResponseType<IPropertyCollection>((int)HttpStatusCode.OK)]
     [ProducesResponseType((int)HttpStatusCode.NotFound)]
     [ProducesResponseType((int)HttpStatusCode.BadRequest)]
-    public ActionResult<IPropertyCollection> Get(string id) {
-        uint datId = 0;
-        if (string.IsNullOrWhiteSpace(id))
-            return BadRequest();
-
-        if (id.StartsWith("0x")) {
-            id = id.Substring(2);
-            if (!uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out datId))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
-        }
-        else
-            if (!uint.TryParse(id, out datId))
-            return new BadRequestObjectResult("Could not parse the ID provided.");
+    public IActionResult Get(string id) {
+        if (!id.IsValid(out var datId, out var error))
+            return error;
 
         if (datId >= 0x70000000 && datId < 0x71000000)
             datId += 0x09000000;
@@ -103,18 +92,8 @@ public class DbPropertiesController : ControllerBase {
     [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the index data has not been loaded")]
     [ProducesResponseType((int)HttpStatusCode.NotFound, Description = "WeenieType is not in the index data.")]
     public IActionResult GetByWeenieType([FromRoute] string weenieType) {
-        uint wt = 0;
-        if (string.IsNullOrWhiteSpace(weenieType))
-            return BadRequest();
-
-        if (weenieType.StartsWith("0x")) {
-            weenieType = weenieType.Substring(2);
-            if (!uint.TryParse(weenieType, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out wt))
-                return new BadRequestObjectResult("Could not parse the ID provided.");
-        }
-        else
-            if (!uint.TryParse(weenieType, out wt))
-            return new BadRequestObjectResult("Could not parse the ID provided.");
+        if (!weenieType.IsValid(out var wt, out var error))
+            return error;
 
         if (DatCache.Index.Names.Count < 1)
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
@@ -164,6 +143,33 @@ public class DbPropertiesController : ControllerBase {
             return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
 
         return new OkObjectResult(DatCache.Index.TreasureTables);
+    }
+
+    /// <summary>
+    /// Gets all Treasure Table IDs that contain the given Weenie ID.
+    /// </summary>
+    /// <param name="id">The Weenie ID to search for. Hex with "0x" prefix or plain integer.</param>
+    [HttpGet("TreasureTablesFor/{id}")]
+    [ProducesResponseType<List<uint>>((int)HttpStatusCode.OK)]
+    [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+    [ProducesResponseType((int)HttpStatusCode.FailedDependency, Description = "Happens when the treasure map has not been loaded")]
+    public IActionResult GetTreasureTablesFor(string id) {
+        if (!id.IsValid(out var datId, out var error))
+            return error;
+
+        if (datId >= 0x70000000 && datId < 0x71000000)
+            datId += 0x09000000;
+
+        if (DatCache.TreasureMap.Count < 1)
+            return new StatusCodeResult((int)HttpStatusCode.FailedDependency);
+
+        var tables = DatCache.TreasureMap
+            .Where(kvp => kvp.Value.Contains(datId))
+            .Select(kvp => kvp.Key)
+            .OrderBy(k => k)
+            .ToList();
+
+        return new OkObjectResult(tables);
     }
 
     /// <summary>
