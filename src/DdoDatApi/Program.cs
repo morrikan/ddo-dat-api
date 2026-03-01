@@ -16,7 +16,7 @@ public static class Program
 
         // Add services to the container.
 
-        builder.Services.AddControllers()
+        builder.Services.AddControllersWithViews()
             .AddNewtonsoftJson(options =>
             {
                 options.SerializerSettings.Converters.Add(new IPropertyJsonConverter());
@@ -42,6 +42,7 @@ public static class Program
         app.UseSwaggerUI();
 
         app.UseHttpsRedirection();
+        app.UseStaticFiles();
         app.MapControllers();
 
         DatSource.Load();

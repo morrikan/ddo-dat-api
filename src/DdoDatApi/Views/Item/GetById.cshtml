@@ -1,0 +1,316 @@
+@model ItemViewModel
+@{
+    ViewData["Title"] = Model.Title;
+}
+
+@section Styles {
+<style>
+    :root {
+        --img-top-left:                url('/images/@Model.Theme/@(Model.Theme)-top-left.png');
+        --img-top-right:               url('/images/@Model.Theme/@(Model.Theme)-top-right.png');
+        --img-sidebar-left-back:       url('/images/@Model.Theme/@(Model.Theme)-sidebar-left-back.png');
+        --img-sidebar-right-back:      url('/images/@Model.Theme/@(Model.Theme)-sidebar-right-back.png');
+        --img-sidebar-left-top:        url('/images/@Model.Theme/@(Model.Theme)-sidebar-left-top.png');
+        --img-sidebar-right-top:       url('/images/@Model.Theme/@(Model.Theme)-sidebar-right-top.png');
+        --img-sidebar-left-bottom:     url('/images/@Model.Theme/@(Model.Theme)-sidebar-left-bottom.png');
+        --img-sidebar-right-bottom:    url('/images/@Model.Theme/@(Model.Theme)-sidebar-right-bottom.png');
+        --img-bottom-left-bottom:      url('/images/@Model.Theme/@(Model.Theme)-bottom-left-bottom.png');
+        --img-bottom-right-bottom:     url('/images/@Model.Theme/@(Model.Theme)-bottom-right-bottom.png');
+        --img-topbar-header:           url('/images/@Model.Theme/@(Model.Theme)-topbar-header.png');
+        --img-topbar-shadow:           url('/images/@Model.Theme/@(Model.Theme)-topbar-shadow.png');
+        --img-middle-bottom-bartop:    url('/images/@Model.Theme/@(Model.Theme)-middle-bottom-bartop.png');
+        --img-middle-bottom-barbottom: url('/images/@Model.Theme/@(Model.Theme)-middle-bottom-barbottom.png');
+    }
+</style>
+}
+
+<div class="page-wrapper">
+
+    @* ── Text side ──────────────────────────────────────────────────────── *@
+    <div class="text-side">
+        <div class="item-data">
+            <table class="item-table">
+                <tr><th>Field</th><th>Value</th></tr>
+                @foreach (var row in Model.TableRows)
+                {
+                    <tr>
+                        <td class="fn">@row.Field</td>
+                        <td class="fv">@row.Value</td>
+                    </tr>
+                }
+            </table>
+
+            @if (Model.Effects.Count > 0)
+            {
+                <div class="sec-hdr">Effects</div>
+                <ul class="elist">
+                    @foreach (var effect in Model.Effects)
+                    {
+                        <li>@effect.Name.TrimEnd()@if (!string.IsNullOrEmpty(effect.Description)) {<span class="effect-desc">: @effect.Description</span>}</li>
+                    }
+                </ul>
+            }
+
+            @if (Model.AugmentSlots.Count > 0)
+            {
+                <div class="sec-hdr">Augment Slots</div>
+                <ul class="elist">
+                    @foreach (var slot in Model.AugmentSlots)
+                    {
+                        <li>@slot</li>
+                    }
+                </ul>
+            }
+
+            @if (Model.SetBonus1 != null || Model.SetBonus2 != null)
+            {
+                <div class="sec-hdr">Set Bonuses</div>
+                @foreach (var sb in new[] { Model.SetBonus1, Model.SetBonus2 }.Where(s => s != null))
+                {
+                    <div class="set-bonus-block">
+                        <div class="set-bonus-name">@sb.Name</div>
+                        @foreach (var desc in sb.Descriptions)
+                        {
+                            @foreach (var line in desc.Split(@"\n"))
+                            {
+                                <div class="set-bonus-line">@line</div>
+                            }
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    @* ── Mock side (DDO tooltip panel) ──────────────────────────────────── *@
+    <div class="mock-side">
+        <div id="@Model.Theme">
+            <div class="panel-container theme-@Model.Theme">
+
+                @* Left sidebar *@
+                <div class="panel-left-sidebar">
+                    <div class="panel-left-top-content">
+                        <div class="panel-left-top-image"></div>
+                    </div>
+                    <div class="panel-left-mid-content">
+                        <div class="panel-left-sidebar-image">
+                            <div class="panel-left-fangle"></div>
+                            <div class="panel-left-sidebar-bottom-image"></div>
+                        </div>
+                    </div>
+                    <div class="panel-left-bottom-content">
+                        <div class="panel-left-bottom-image"></div>
+                    </div>
+                </div>
+
+                @* Middle *@
+                <div class="panel-middle">
+                    <div class="panel-middle-header">
+                        <div class="panel-middle-header-image"></div>
+                    </div>
+                    <div class="panel-middle-body-container">
+                        <div class="panel-middle-top-shadow">
+                            <div class="panel-middle-body-content">
+
+                                @* Row 1: icon + name *@
+                                <div class="panel-main-row-one">
+                                    <div class="panel-main-icon">
+                                        <img src="@Model.ItemIconUrl" alt="@Model.ItemName" width="36" height="36">
+                                    </div>
+                                    <div class="panel-item">
+                                        <div class="panel-item-name">@Model.ItemName</div>
+                                        @if (Model.TypeLine != null && !Model.IsEquipSlot)
+                                        {
+                                            <div class="type-and-diff-wrapper">
+                                                <div class="panel-main-weapon-type">@Model.TypeLine</div>
+                                            </div>
+                                        }
+                                        @if (Model.AcceptsSentience)
+                                        {
+                                            <div class="panel-main-accept-sentience">Accepts Sentience</div>
+                                        }
+                                    </div>
+                                </div>
+
+                                @* Row 2: all item details *@
+                                <div class="panel-main-row-two">
+                                    @if (Model.BoundLine != null)
+                                    {
+                                        <div class="panel-main-bound-line">@Model.BoundLine</div>
+                                    }
+
+                                    @if (Model.IsEquipSlot && Model.TypeLine != null)
+                                    {
+                                        <div class="panel-equip-slot">Equips to: @Model.TypeLine</div>
+                                    }
+
+                                    @if (Model.AcceptsSentience)
+                                    {
+                                        <div class="panel-main-spacer-after-name"></div>
+                                    }
+
+                                    @if (Model.IsWeapon || Model.IsShield)
+                                    {
+                                        <div class="panel-main-weapon">
+                                            @if (Model.IsWeapon)
+                                            {
+                                                <div><span>Base Damage Rating:</span> @Model.BaseDamageRating.ToString("0.##")</div>
+                                            }
+                                            @if (Model.DamageLine != null)
+                                            {
+                                                <div class="panel-main-weapon-damage"><span>Damage:</span> @Model.DamageLine</div>
+                                            }
+                                            @if (Model.HitDmgAbility != null)
+                                            {
+                                                <div><span>Hit/Dmg:</span> @Model.HitDmgAbility</div>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (Model.IsShield && (Model.ShieldBonus != null || Model.DamageReduction != null))
+                                    {
+                                        <div class="panel-main-shield">
+                                            @if (Model.ShieldBonus != null)
+                                            {
+                                                <div class="panel-main-shield-bonus"><span>Shield Bonus:</span> @Model.ShieldBonus</div>
+                                            }
+                                            @if (Model.DamageReduction != null)
+                                            {
+                                                <div class="panel-main-shield-damage-reduction"><span>Damage Reduction:</span> @Model.DamageReduction</div>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (Model.MinLevel != null)
+                                    {
+                                        <div class="panel-main-min-level">Minimum Level: @Model.MinLevel</div>
+                                    }
+
+                                    @if (Model.Binding != null)
+                                    {
+                                        <div class="panel-main-binding">@Model.Binding</div>
+                                    }
+
+                                    @if (Model.IsWeapon && Model.AcceptsSentience)
+                                    {
+                                        <div class="panel-main-accept-sentience" style="padding-bottom:3px">Accepts Sentience</div>
+                                    }
+
+                                    @if (Model.ClickieText != null)
+                                    {
+                                        <div class="panel-main-clicky">@Model.ClickieText</div>
+                                    }
+
+                                    @{
+                                        var regularEffects = Model.Effects.Where(e => !e.Name.TrimEnd().EndsWith("Augment Slot")).ToList();
+                                        var augmentEffects = Model.Effects.Where(e => e.Name.TrimEnd().EndsWith("Augment Slot")).ToList();
+                                    }
+                                    @if (regularEffects.Count > 0)
+                                    {
+                                        <div class="panel-main-effect-list">
+                                            @foreach (var effect in regularEffects)
+                                            {
+                                                <div class="panel-main-effect">
+                                                    <div class="panel-main-effect-list-name">@effect.Name.TrimEnd()@if (!string.IsNullOrEmpty(effect.Description)) {<span class="effect-desc">: @effect.Description</span>}</div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (augmentEffects.Count > 0 || Model.AugmentSlots.Count > 0)
+                                    {
+                                        <div class="panel-main-effect-list">
+                                            <div class="panel-main-effect-header">Augments:</div>
+                                            @foreach (var effect in augmentEffects)
+                                            {
+                                                <div class="panel-main-effect">
+                                                    <div class="panel-main-effect-list-name"><span class="panel-augment-slot-name">@effect.Name.TrimEnd()</span><span class="panel-augment-empty">: Empty</span>@* TODO: replace with actual fill when rendering instances *@</div>
+                                                </div>
+                                            }
+                                            @foreach (var slot in Model.AugmentSlots)
+                                            {
+                                                <div class="panel-main-effect">
+                                                    <div class="panel-sub-effect">@slot</div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    @foreach (var sb in new[] { Model.SetBonus1, Model.SetBonus2 }.Where(s => s != null))
+                                    {
+                                        <div class="panel-main-set-bonus">
+                                            <div class="panel-main-set-bonus-name">@sb.Name:</div>
+                                            @foreach (var desc in sb.Descriptions)
+                                            {
+                                                var lines = desc.Split(@"\n");
+                                                <div class="panel-main-set-bonus-line panel-set-bonus-tier">@lines[0]</div>
+                                                @for (int li = 1; li < lines.Length; li++)
+                                                {
+                                                    <div class="panel-main-set-bonus-line">@lines[li]</div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (Model.Durability != null)
+                                    {
+                                        <div class="panel-main-durability">
+                                            <div class="panel-main-durability-text">
+                                                <div>Durability: @Model.Durability / @Model.Durability</div>
+                                                @if (Model.DurabilityMaterial != null)
+                                                {
+                                                    <div>@Model.DurabilityMaterial@(Model.DurabilityHardness != null ? $" (Hardness: {Model.DurabilityHardness})" : "")</div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(Model.Description))
+                                    {
+                                        <div class="panel-main-description">@Model.Description</div>
+                                    }
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div class="panel-middle-footer">
+                        <div class="panel-middle-footer-image">
+                            @if (Model.Weight != null || Model.BaseValue != null)
+                            {
+                                <div class="panel-middle-footer-data">
+                                    @if (Model.BaseValue != null)
+                                    {
+                                        <div class="panel-middle-base-value">Base Value: @Model.BaseValue.Value.ToString("N0")</div>
+                                    }
+                                    @if (Model.Weight != null)
+                                    {
+                                        <div class="panel-middle-weight">@Model.Weight</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @* Right sidebar *@
+                <div class="panel-right-sidebar">
+                    <div class="panel-right-top-content">
+                        <div class="panel-right-top-image"></div>
+                    </div>
+                    <div class="panel-right-mid-content">
+                        <div class="panel-right-sidebar-image">
+                            <div class="panel-right-fangle"></div>
+                            <div class="panel-right-sidebar-bottom-image"></div>
+                        </div>
+                    </div>
+                    <div class="panel-right-bottom-content">
+                        <div class="panel-right-bottom-image"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+</div>
