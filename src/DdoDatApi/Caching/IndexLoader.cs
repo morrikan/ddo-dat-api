@@ -130,6 +130,8 @@ public class IndexLoader {
         DatCache.TreasureMap = treasureMap;
         DatCache.RecipeMap = recipeMap;
 
+        BuildWeaponProficiencyMap();
+
         SaveJson(CachePath, indexData, "indexing data");
         SaveJson(TreasureMapPath, treasureMap, "treasure map");
         SaveJson(RecipeMapPath, recipeMap, "recipe map");
@@ -256,6 +258,49 @@ public class IndexLoader {
         if (File.Exists(RecipeMapPath)) {
             DatCache.RecipeMap = LoadJson<Dictionary<uint, List<RecipeData>>>(RecipeMapPath, "recipe map");
         }
+
+        BuildWeaponProficiencyMap();
+    }
+
+    private static void BuildWeaponProficiencyMap()
+    {
+        DatCache.SimpleProficiency  = DatSource.PropertyMaster.GetPropertyCollection(DatCache.SimpleProficiencyId);
+        DatCache.MartialProficiency = DatSource.PropertyMaster.GetPropertyCollection(DatCache.MartialProficiencyId);
+        DatCache.ExoticProficiency  = DatSource.PropertyMaster.GetPropertyCollection(DatCache.ExoticProficiencyId);
+
+        var baseNames = new Dictionary<uint, string>();
+        if (DatCache.SimpleProficiency?.Name  != null) baseNames[DatCache.SimpleProficiencyId]  = DatCache.SimpleProficiency.Name;
+        if (DatCache.MartialProficiency?.Name != null) baseNames[DatCache.MartialProficiencyId] = DatCache.MartialProficiency.Name;
+        if (DatCache.ExoticProficiency?.Name  != null) baseNames[DatCache.ExoticProficiencyId]  = DatCache.ExoticProficiency.Name;
+
+        var map = new Dictionary<uint, string>();
+
+        foreach (var (name, ids) in DatCache.Index.Names)
+        {
+            if (!name.StartsWith("Proficiency: ", StringComparison.OrdinalIgnoreCase)) continue;
+
+            foreach (var id in ids)
+            {
+                var props = DatSource.PropertyMaster.GetPropertyCollection(id);
+                if (props == null) continue;
+
+                var weaponTypeProp = props.GetEnumProperty((uint)DdoProperty.Feat_WeaponType);
+                if (weaponTypeProp == null || weaponTypeProp.UInt32Value == 0) continue;
+
+                var baseFeatRaw = props.GetInt32PropertyValue((uint)DdoProperty.Feat_BaseFeat);
+                if (baseFeatRaw == null || baseFeatRaw == 0) continue;
+
+                var baseFeatId = (uint)baseFeatRaw.Value;
+                if (baseFeatId >= 0x70000000 && baseFeatId < 0x71000000)
+                    baseFeatId += 0x09000000;
+
+                if (baseNames.TryGetValue(baseFeatId, out var profName))
+                    map[weaponTypeProp.UInt32Value.Value] = profName;
+            }
+        }
+
+        DatCache.WeaponProficiencyNames = map;
+        Console.WriteLine($"Built weapon proficiency map ({map.Count} weapon types).");
     }
 
     private static T LoadJson<T>(string path, string label) {

@@ -8,6 +8,7 @@ body {
     padding-bottom: 50px;
 }
 .effect-desc { display: inline; color: #999; font-size: 0.85em; }
+.set-bonus-line { color: #999; font-size: 0.85em; }
 body.hide-descs .effect-desc,
 body.hide-descs .set-bonus-line,
 body.hide-descs .panel-main-set-bonus-line { display: none; }
@@ -25,9 +26,11 @@ footer.site-footer {
     z-index: 1000;
 }
 footer.site-footer label { color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-.page-wrapper { display: flex; gap: 30px; align-items: flex-start; }
-.text-side { flex: 1; min-width: 400px; }
+.page-wrapper { display: flex; flex-direction: column; gap: 20px; }
+.top-row { display: flex; gap: 30px; align-items: flex-start; }
+.item-table-wrapper { flex: 1; min-width: 300px; max-width: 50%; }
 .mock-side { flex-shrink: 0; }
+.bottom-section { width: 100%; }
 .item-table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
 .item-table th {
     text-align: left; color: #fff; padding: 4px 8px;

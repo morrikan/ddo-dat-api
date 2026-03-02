@@ -17,12 +17,6 @@ namespace DdoDatApi.Controllers;
 [Route("[controller]")]
 public class ItemController : Controller
 {
-    private const uint WT_Weapon   = 0x00020081;
-    private const uint WT_Shield   = 0x00010081;
-    private const uint WT_Jewelry  = 0x00070081;
-    private const uint WT_Clothing = 0x00030081;
-    private const uint WT_Augment  = 0x000D0081;
-
     private const uint SetBonusMasterId = 0x7902F3F9;
 
     /// <summary>
@@ -52,11 +46,11 @@ public class ItemController : Controller
     private static ItemViewModel BuildViewModel(uint itemId, IPropertyCollection props)
     {
         var weenieType = props.GetWeenieType();
-        var theme      = GetTheme(props);
-        var effects    = GetEffectNames(props, out var clickie, out var effectCtx, out var boundLine);
-        var augSlots   = GetAugmentSlots(props);
-        var setBonus1  = GetSetBonusInfo(props, (uint)DdoProperty.Item_SetBonus_1);
-        var setBonus2  = GetSetBonusInfo(props, (uint)DdoProperty.Item_SetBonus_2);
+        var theme = GetTheme(props);
+        var effects = GetEffectNames(props, out var clickie, out var effectCtx, out var boundLine, out var minLevelFromEffects, out var isExclusive);
+        var augSlots = GetAugmentSlots(props, weenieType);
+        var setBonus1 = GetSetBonusInfo(props, (uint)DdoProperty.Item_SetBonus_1);
+        var setBonus2 = GetSetBonusInfo(props, (uint)DdoProperty.Item_SetBonus_2);
 
         // Prefer Usage_MinLevel from raw props; fall back to Treasure_BaseLevel set by effects
         var minLevel = props.GetInt32PropertyValue((uint)DdoProperty.Usage_MinLevel);
@@ -64,17 +58,21 @@ public class ItemController : Controller
             var baseLevel = effectCtx.GetValue((uint)DdoProperty.Treasure_BaseLevel);
             if (baseLevel is > 0) minLevel = (int)baseLevel.Value;
         }
+        if (minLevel == null || minLevel == 0)
+            minLevel = minLevelFromEffects;
 
-        // Durability = base + any bonus added by static mutator (Item Hardness)
+        var enhBonus = effectCtx.GetValue((uint)DdoProperty.Combat_EnhancementBonus) ?? 0f;
+
+        // Material is computed once; used by both the table row and the durability block in the view.
+        string material = weenieType != WeenieTypes.Augment ? GetMaterialName(props) : null;
+
         int? durability = null;
-        string durabilityMaterial = null;
         int? durabilityHardness = null;
-        if (weenieType != WT_Augment) {
+        if (weenieType != WeenieTypes.Augment) {
             var durBase = props.GetInt32PropertyValue((uint)DdoProperty.MaxDurability_Base);
             if (durBase != null) {
                 var durBonus = effectCtx.GetValue((uint)DdoProperty.MaxDurability_Effect);
                 durability = durBase.Value + (int)(durBonus ?? 0f);
-                durabilityMaterial = GetMaterialName(props);
                 var h = effectCtx.GetValue((uint)DdoProperty.Durability_Hardness);
                 if (h is > 0) durabilityHardness = (int)h.Value;
             }
@@ -83,152 +81,256 @@ public class ItemController : Controller
         var baseValueF = effectCtx.GetValue((uint)DdoProperty.Item_Value);
         int? baseValue = baseValueF is > 0 ? (int)(baseValueF.Value / 1000f) : null;
 
-        var typeLine = weenieType switch {
-            WT_Weapon                     => GetEnumDisplayName<WeaponType>(props, (uint)DdoProperty.Combat_WeaponType),
-            WT_Shield                     => GetEnumDisplayName<ShieldType>(props, (uint)DdoProperty.Combat_ShieldType),
-            WT_Jewelry or WT_Clothing     => GetEquipSlot(props),
-            WT_Augment                    => GetBitFieldValues(props, (uint)DdoProperty.Augment_SlotTypes).FirstOrDefault(),
-            _                             => null
-        };
+        var enc = props.GetInt32PropertyValue((uint)DdoProperty.Inventory_Encumbrance);
+        var weight = enc != null ? $"{enc.Value / 100.0:0.00} lbs" : null;
+
+        var binding = GetBindingText(props, boundLine);
+        var desc = props.GetStringInfoProperty((uint)DdoProperty.Item_Description)
+                       ?.GetText(DatSource.PropertyMaster, null, null);
 
         var acceptsSentience = props.GetBytePropertyValue((uint)DdoProperty.AcceptsSentience) == 1;
-        var binding          = GetBindingText(props, boundLine);
-        var desc             = props.GetStringInfoProperty((uint)DdoProperty.Item_Description)
-                                   ?.GetText(DatSource.PropertyMaster, null, null);
-        var enc = props.GetInt32PropertyValue((uint)DdoProperty.Inventory_Encumbrance);
 
-        string damageLine = null, hitDmgAbility = null;
-        if (weenieType == WT_Weapon || weenieType == WT_Shield) {
-            damageLine    = BuildDamageLine(props);
-            hitDmgAbility = BuildHitDmgAbility(props);
+        var raceExcluded = new List<string>();
+        var raceName = GetEnumDisplayName<RaceType>(props, (uint)DdoProperty.Usage_CreatureRaceExcluded_Absolute);
+        if (raceName != null) raceExcluded.Add(raceName);
+
+        // Always compute equip slot; the view shows it on the mock panel for all types.
+        // AppendTypeFieldsAfterName only adds a "Slot" table row for Jewelry/Clothing.
+        var equipSlot = GetEquipSlot(props);
+
+        // Compute all type-specific fields once; used by both the ViewModel (mock panel) and TableRows (text table).
+        string typeLine = null;
+        string damageLine = null;
+        string critRollLine = null;
+        string attackMod = null;
+        string damageMod = null;
+        float bdr = 0f;
+        bool isTwoHanded = false;
+        int? shieldBonus = null;
+        int? maxDexBonus = null;
+        int? damageReduction = null;
+        int? attackPenalty = null;
+        int? armorBonus = null;
+        int? armorCheckPenalty = null;
+        int? spellFailureChance = null;
+
+        switch (weenieType) {
+            case WeenieTypes.Weapon: {
+                typeLine = GetEnumDisplayName<WeaponType>(props, (uint)DdoProperty.Combat_WeaponType);
+                damageLine = BuildDamageLine(props, enhBonus, effectCtx);
+                critRollLine = BuildCriticalRollLine(props);
+                attackMod = BuildAttackMod(props);
+                damageMod = BuildDamageMod(props);
+                bdr = BuildBaseDamageRating(props, effectCtx);
+                isTwoHanded = GetBitFieldValues(props, (uint)DdoProperty.Inventory_PrecludedSlot).Contains("Weapon2");
+                break;
+            }
+            case WeenieTypes.Shield: {
+                // Combat_ShieldType is a BitField (e.g. ["Tower"]), not an Enum property.
+                var shieldTypeName = GetBitFieldValues(props, (uint)DdoProperty.Combat_ShieldType).FirstOrDefault();
+                typeLine = shieldTypeName != null ? $"{shieldTypeName} Shield" : null;
+                var rawBonus = props.GetInt32PropertyValue((uint)DdoProperty.Combat_ShieldBonus);
+                if (rawBonus != null) shieldBonus = rawBonus.Value + (int)enhBonus;
+                var rawMaxDex = props.GetInt32PropertyValue((uint)DdoProperty.Combat_MaxDexBonus);
+                if (rawMaxDex is < 99) maxDexBonus = rawMaxDex;
+                var rawDr = props.GetInt32PropertyValue((uint)DdoProperty.Combat_BlockingDamageReduction);
+                if (rawDr is > 0) damageReduction = rawDr.Value + (int)enhBonus;
+                var rawAcp = props.GetInt32PropertyValue((uint)DdoProperty.Combat_SkillCheckPenalty);
+                if (rawAcp != null && rawAcp != 0) {
+                    var normalized = rawAcp < 0 ? rawAcp.Value : -rawAcp.Value;
+                    var adjusted = normalized + 1;
+                    if (adjusted < 0) armorCheckPenalty = adjusted;
+                }
+                var rawSf = props.GetFloatPropertyValue((uint)DdoProperty.Spell_SpellFailureChance);
+                if (rawSf is > 0f) spellFailureChance = (int)Math.Round(rawSf.Value * 100f);
+                var rawAtk = props.GetInt32PropertyValue((uint)DdoProperty.Combat_ShieldAttackPenalty);
+                if (rawAtk is < 0) attackPenalty = rawAtk;
+                damageLine = BuildDamageLine(props, enhBonus, effectCtx);
+                critRollLine = BuildCriticalRollLine(props);
+                attackMod = BuildAttackMod(props);
+                damageMod = BuildDamageMod(props);
+                bdr = BuildBaseDamageRating(props, effectCtx);
+                break;
+            }
+            case WeenieTypes.Armor: {
+                var armorType = GetEnumDisplayName<ArmorType>(props, (uint)DdoProperty.Combat_ArmorType);
+                typeLine = armorType != null ? $"{armorType} Armor" : null;
+                var baseAc = props.GetInt32PropertyValue((uint)DdoProperty.Combat_ArmorBonus);
+                if (baseAc != null) armorBonus = baseAc.Value + (int)enhBonus;
+                var rawMaxDex = props.GetInt32PropertyValue((uint)DdoProperty.Combat_MaxDexBonus);
+                if (rawMaxDex is < 99) maxDexBonus = rawMaxDex;
+                var rawAcp = props.GetInt32PropertyValue((uint)DdoProperty.Combat_SkillCheckPenalty);
+                if (rawAcp != null && rawAcp != 0) {
+                    var normalized = rawAcp < 0 ? rawAcp.Value : -rawAcp.Value;
+                    var adjusted = normalized + 1;
+                    if (adjusted < 0) armorCheckPenalty = adjusted;
+                }
+                var rawSf = props.GetFloatPropertyValue((uint)DdoProperty.Spell_SpellFailureChance);
+                if (rawSf is > 0f) spellFailureChance = (int)Math.Round(rawSf.Value * 100f);
+                break;
+            }
+            case WeenieTypes.Augment:
+                typeLine = GetBitFieldValues(props, (uint)DdoProperty.Augment_SlotTypes).FirstOrDefault();
+                break;
         }
 
-        int? shieldBonus = null, damageReduction = null;
-        if (weenieType == WT_Shield) {
-            shieldBonus     = props.GetInt32PropertyValue((uint)DdoProperty.Combat_ShieldBonus);
-            var dr          = props.GetInt32PropertyValue((uint)DdoProperty.Combat_BlockingDamageReduction);
-            damageReduction = dr is > 0 ? dr : null;
+        string proficiencyName = null;
+        if (weenieType == WeenieTypes.Weapon) {
+            var wt = props.GetEnumProperty((uint)DdoProperty.Combat_WeaponType);
+            if (wt != null) DatCache.WeaponProficiencyNames.TryGetValue(wt.UInt32Value.Value, out proficiencyName);
+        } else if (weenieType == WeenieTypes.Shield && typeLine != null) {
+            proficiencyName = $"{typeLine} Proficiency";
+        } else if (weenieType == WeenieTypes.Armor) {
+            var at = GetEnumDisplayName<ArmorType>(props, (uint)DdoProperty.Combat_ArmorType);
+            if (at != null) proficiencyName = $"{at} Armor Proficiency";
         }
 
-        return new ItemViewModel {
-            Title            = props.Name ?? "Item",
-            Theme            = theme,
-            WeenieType       = weenieType,
-            TableRows        = BuildTableRows(props, weenieType, clickie, minLevel, durability, boundLine),
-            Effects          = effects,
-            AugmentSlots     = augSlots,
-            SetBonus1        = setBonus1,
-            SetBonus2        = setBonus2,
-            ItemIconUrl      = $"/Image/Icon/0x{itemId:X8}",
-            ItemName         = props.Name ?? "Unknown",
-            TypeLine         = typeLine,
+        var vm = new ItemViewModel {
+            Title = props.Name ?? "Item",
+            Theme = theme,
+            WeenieType = weenieType,
+            Effects = effects,
+            AugmentSlots = augSlots,
+            SetBonus1 = setBonus1,
+            SetBonus2 = setBonus2,
+            Recipes = GetRecipes(itemId),
+            ItemIconUrl = $"/Image/Icon/0x{itemId:X8}",
+            ItemName = props.Name ?? "Unknown",
+            TypeLine = typeLine,
+            EquipsToLine = equipSlot,
+            ProficiencyName = proficiencyName,
             AcceptsSentience = acceptsSentience,
-            MinLevel         = minLevel is > 0 ? minLevel : null,
-            Binding          = binding,
-            ClickieText      = clickie != null ? BuildClickieText(clickie) : null,
-            Description      = desc,
-            DamageLine       = damageLine,
-            HitDmgAbility    = hitDmgAbility,
-            ShieldBonus      = shieldBonus,
-            DamageReduction  = damageReduction,
-            Durability         = durability,
-            DurabilityMaterial = durabilityMaterial,
+            MinLevel = minLevel is > 0 ? minLevel : null,
+            Binding = binding,
+            IsExclusive = isExclusive,
+            RaceExcluded = raceExcluded,
+            Clickie = clickie,
+            Description = desc,
+            DamageLine = damageLine,
+            CriticalRollLine = critRollLine,
+            AttackMod = attackMod,
+            DamageMod = damageMod,
+            BaseDamageRating = bdr,
+            IsTwoHanded = isTwoHanded,
+            ShieldBonus = shieldBonus,
+            DamageReduction = damageReduction,
+            AttackPenalty = attackPenalty,
+            ArmorBonus = armorBonus,
+            MaxDexBonus = maxDexBonus,
+            ArmorCheckPenalty = armorCheckPenalty,
+            SpellFailureChance = spellFailureChance,
+            Durability = durability,
+            Material = material,
             DurabilityHardness = durabilityHardness,
-            Weight             = enc != null ? $"{enc.Value / 100.0:0.00} lbs" : null,
-            BaseValue          = baseValue,
-            BoundLine          = boundLine,
+            Weight = weight,
+            BaseValue = baseValue,
+            BoundLine = boundLine,
         };
+
+        vm.TableRows = BuildTableRows(vm);
+        return vm;
     }
 
-    private static List<TableRow> BuildTableRows(
-        IPropertyCollection props, uint weenieType, ClickieData clickie, int? minLevel, int? durability, string boundLine)
+    private static List<TableRow> BuildTableRows(ItemViewModel vm)
     {
         var rows = new List<TableRow>();
 
-        rows.Add(new TableRow("Name", props.Name ?? "Unknown"));
+        rows.Add(new TableRow { Field = "Name", Value = vm.ItemName });
 
-        AppendTypeFieldsAfterName(props, weenieType, rows);
+        AppendTypeFieldsAfterName(vm, rows);
 
-        if (minLevel is > 0)
-            rows.Add(new TableRow("Minimum Level", minLevel.Value.ToString()));
+        if (vm.ProficiencyName != null)
+            rows.Add(new TableRow { Field = "Proficiency", Value = vm.ProficiencyName });
 
-        var binding = GetBindingText(props, boundLine);
-        if (binding != null)
-            rows.Add(new TableRow(weenieType == WT_Augment ? "Bind Status" : "Binding", binding));
+        foreach (var race in vm.RaceExcluded)
+            rows.Add(new TableRow { Field = "Race Absolutely Excluded", Value = race });
 
-        if (weenieType == WT_Weapon && props.GetBytePropertyValue((uint)DdoProperty.AcceptsSentience) == 1)
-            rows.Add(new TableRow("Accepts Sentience", "Yes"));
+        if (vm.MinLevel is > 0)
+            rows.Add(new TableRow { Field = "Minimum Level", Value = vm.MinLevel.Value.ToString() });
 
-        if (clickie != null)
-            rows.Add(new TableRow("Clickie", BuildClickieText(clickie)));
+        if (vm.Binding != null)
+            rows.Add(new TableRow { Field = vm.IsAugment ? "Bind Status" : "Binding", Value = vm.Binding });
 
-        var desc = props.GetStringInfoProperty((uint)DdoProperty.Item_Description)
-            ?.GetText(DatSource.PropertyMaster, null, null);
-        if (!string.IsNullOrWhiteSpace(desc))
-            rows.Add(new TableRow("Description", desc));
-
-        if (weenieType != WT_Augment) {
-            var mat = GetMaterialName(props);
-            if (mat != null) rows.Add(new TableRow("Material", mat));
-
-            if (durability != null) rows.Add(new TableRow("Durability", durability.Value.ToString()));
+        // Shield combat stats follow Binding to match in-game examine panel order.
+        if (vm.IsShield) {
+            if (vm.ShieldBonus != null) rows.Add(new TableRow { Field = "Shield Bonus", Value = $"+{vm.ShieldBonus}" });
+            if (vm.MaxDexBonus != null) rows.Add(new TableRow { Field = "Max Dex Bonus", Value = vm.MaxDexBonus.Value.ToString() });
+            if (vm.DamageReduction != null) rows.Add(new TableRow { Field = "Damage Reduction (DR)", Value = vm.DamageReduction.Value.ToString() });
+            if (vm.ArmorCheckPenalty != null) rows.Add(new TableRow { Field = "Armor Check Penalty", Value = vm.ArmorCheckPenalty.Value.ToString() });
+            if (vm.SpellFailureChance != null) rows.Add(new TableRow { Field = "Spell Failure", Value = $"{vm.SpellFailureChance}%" });
+            if (vm.AttackPenalty != null) rows.Add(new TableRow { Field = "Attack Penalty", Value = vm.AttackPenalty.Value.ToString() });
+            if (vm.DamageLine != null) rows.Add(new TableRow { Field = "Damage", Value = vm.DamageLine });
+            if (vm.CriticalRollLine != null) rows.Add(new TableRow { Field = "Critical Roll", Value = vm.CriticalRollLine });
+            if (vm.AttackMod != null) rows.Add(new TableRow { Field = "Attack Mod", Value = vm.AttackMod });
+            if (vm.DamageMod != null) rows.Add(new TableRow { Field = "Damage Mod", Value = vm.DamageMod });
         }
 
-        var enc = props.GetInt32PropertyValue((uint)DdoProperty.Inventory_Encumbrance);
-        if (enc != null)
-            rows.Add(new TableRow("Weight", $"{enc.Value / 100.0:0.00} lbs"));
+        if (vm.IsExclusive)
+            rows.Add(new TableRow { Field = "Exclusive", Value = "You may only have ONE of this unique item equipped or in inventory at any one time." });
+
+        if (vm.IsWeapon && vm.AcceptsSentience)
+            rows.Add(new TableRow { Field = "Accepts Sentience", Value = "Yes" });
+
+        if (vm.Clickie != null) {
+            var ci = vm.Clickie;
+            var sb = new System.Text.StringBuilder(ci.SpellName ?? "?");
+            if (ci.CasterLevel != null) sb.Append($" (Caster Level: {ci.CasterLevel})");
+            sb.Append(" \u2014 ");
+            if (ci.MaxCharges != null) sb.Append($"{ci.MaxCharges} Charge{(ci.MaxCharges == 1 ? "" : "s")}");
+            if (ci.DailyRecharge != null) {
+                if (ci.MaxCharges != null) sb.Append(", ");
+                sb.Append($"Recharge {ci.DailyRecharge}/day");
+            }
+            rows.Add(new TableRow { Field = "Clickie", Value = sb.ToString() });
+        }
+
+        if (!string.IsNullOrWhiteSpace(vm.Description))
+            rows.Add(new TableRow { Field = "Description", Value = vm.Description });
+
+        if (!vm.IsAugment) {
+            if (vm.Material != null) rows.Add(new TableRow { Field = "Material", Value = vm.Material });
+            if (vm.Durability != null) rows.Add(new TableRow { Field = "Durability", Value = vm.Durability.Value.ToString() });
+        }
+
+        if (vm.Weight != null)
+            rows.Add(new TableRow { Field = "Weight", Value = vm.Weight });
 
         return rows;
     }
 
-    private static void AppendTypeFieldsAfterName(IPropertyCollection props, uint weenieType, List<TableRow> rows)
+    private static void AppendTypeFieldsAfterName(ItemViewModel vm, List<TableRow> rows)
     {
-        if (weenieType == WT_Weapon) {
-            var wt = GetEnumDisplayName<WeaponType>(props, (uint)DdoProperty.Combat_WeaponType);
-            if (wt != null) rows.Add(new TableRow("Weapon Type", wt));
+        switch (vm.WeenieType) {
+            case WeenieTypes.Weapon:
+                if (vm.TypeLine != null) rows.Add(new TableRow { Field = "Weapon Type", Value = vm.TypeLine });
+                if (vm.DamageLine != null) rows.Add(new TableRow { Field = "Damage", Value = vm.DamageLine });
+                if (vm.CriticalRollLine != null) rows.Add(new TableRow { Field = "Critical Roll", Value = vm.CriticalRollLine });
+                if (vm.AttackMod != null) rows.Add(new TableRow { Field = "Attack Mod", Value = vm.AttackMod });
+                if (vm.DamageMod != null) rows.Add(new TableRow { Field = "Damage Mod", Value = vm.DamageMod });
+                if (vm.IsTwoHanded) rows.Add(new TableRow { Field = "Handedness", Value = "Two-handed" });
+                break;
 
-            var dmg = BuildDamageLine(props);
-            if (dmg != null) rows.Add(new TableRow("Damage", dmg));
+            case WeenieTypes.Shield:
+                // Only the type identifier goes here — combat stats come after Binding (see BuildTableRows).
+                if (vm.TypeLine != null) rows.Add(new TableRow { Field = "Shield Type", Value = vm.TypeLine });
+                break;
 
-            var hd = BuildHitDmgAbility(props);
-            if (hd != null) rows.Add(new TableRow("Hit/Dmg Ability", hd));
+            case WeenieTypes.Armor:
+                if (vm.TypeLine != null) rows.Add(new TableRow { Field = "Armor Type", Value = vm.TypeLine });
+                if (vm.ArmorBonus != null) rows.Add(new TableRow { Field = "Armor Bonus", Value = $"+{vm.ArmorBonus}" });
+                if (vm.MaxDexBonus != null) rows.Add(new TableRow { Field = "Max Dex Bonus", Value = vm.MaxDexBonus.Value.ToString() });
+                if (vm.ArmorCheckPenalty != null) rows.Add(new TableRow { Field = "Armor Check Penalty", Value = vm.ArmorCheckPenalty.Value.ToString() });
+                if (vm.SpellFailureChance != null) rows.Add(new TableRow { Field = "Spell Failure", Value = $"{vm.SpellFailureChance}%" });
+                break;
 
-            if (GetBitFieldValues(props, (uint)DdoProperty.Inventory_PrecludedSlot).Contains("Weapon2"))
-                rows.Add(new TableRow("Handedness", "Two-handed"));
-        }
-        else if (weenieType == WT_Shield) {
-            var st = GetEnumDisplayName<ShieldType>(props, (uint)DdoProperty.Combat_ShieldType);
-            if (st != null) rows.Add(new TableRow("Shield Type", st));
+            case WeenieTypes.Jewelry:
+            case WeenieTypes.Clothing:
+                if (vm.EquipsToLine != null) rows.Add(new TableRow { Field = "Slot", Value = vm.EquipsToLine });
+                break;
 
-            var shBonus = props.GetInt32PropertyValue((uint)DdoProperty.Combat_ShieldBonus);
-            if (shBonus != null) rows.Add(new TableRow("Shield Bonus", shBonus.Value.ToString()));
-
-            var maxDex = props.GetInt32PropertyValue((uint)DdoProperty.Combat_MaxDexBonus);
-            if (maxDex is < 99) rows.Add(new TableRow("Max Dex Bonus", maxDex.Value.ToString()));
-
-            var dr = props.GetInt32PropertyValue((uint)DdoProperty.Combat_BlockingDamageReduction);
-            if (dr is > 0) rows.Add(new TableRow("Damage Reduction", dr.Value.ToString()));
-
-            var acp = props.GetInt32PropertyValue((uint)DdoProperty.Combat_SkillCheckPenalty);
-            if (acp is < 0) rows.Add(new TableRow("Armor Check Penalty", acp.Value.ToString()));
-            else if (acp is > 0) rows.Add(new TableRow("Armor Check Penalty", $"-{acp.Value}"));
-
-            var sf = props.GetInt32PropertyValue((uint)DdoProperty.Spell_SpellFailureChance);
-            if (sf is > 0) rows.Add(new TableRow("Arcane Spell Failure", $"{sf}%"));
-
-            var dmg = BuildDamageLine(props);
-            if (dmg != null) rows.Add(new TableRow("Damage", dmg));
-
-            var hd = BuildHitDmgAbility(props);
-            if (hd != null) rows.Add(new TableRow("Hit/Dmg Ability", hd));
-        }
-        else if (weenieType == WT_Jewelry || weenieType == WT_Clothing) {
-            var slot = GetEquipSlot(props);
-            if (slot != null) rows.Add(new TableRow("Slot", slot));
-        }
-        else if (weenieType == WT_Augment) {
-            var augType = GetBitFieldValues(props, (uint)DdoProperty.Augment_SlotTypes).FirstOrDefault();
-            if (augType != null) rows.Add(new TableRow("Augment Type", augType));
+            case WeenieTypes.Augment:
+                if (vm.TypeLine != null) rows.Add(new TableRow { Field = "Augment Type", Value = vm.TypeLine });
+                break;
         }
     }
 
@@ -245,33 +347,76 @@ public class ItemController : Controller
         };
     }
 
-    private static string BuildDamageLine(IPropertyCollection props)
+    private static readonly System.Text.RegularExpressions.Regex _damageDiceRegex =
+        new(@"^(\d+)d(\d+)(?:\+(\d+))?$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static float BuildBaseDamageRating(IPropertyCollection props, EffectContext ctx)
+    {
+        var diceStr = props.GetStringProperty((uint)DdoProperty.DamageValue)?.StringValue;
+        if (diceStr == null) return 0f;
+
+        var match = _damageDiceRegex.Match(diceStr);
+        if (!match.Success) return 0f;
+
+        var dieCount = int.Parse(match.Groups[1].Value);
+        var dieSize  = int.Parse(match.Groups[2].Value);
+        var dieBonus = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0;
+
+        var scale     = props.GetFloatPropertyValue((uint)DdoProperty.BaseWeaponDamageDiceModifier) ?? 1.0f;
+        var enhBonus  = ctx.GetValue((uint)DdoProperty.Combat_EnhancementBonus) ?? 0f;
+        var critRange = props.GetInt32PropertyValue((uint)DdoProperty.Combat_CriticalHitRange) ?? 0;
+        var critMod   = props.GetInt32PropertyValue((uint)DdoProperty.Combat_CriticalHitMod) ?? 2;
+
+        var dmgNominal = (int)(scale * (dieCount + dieBonus) + enhBonus);
+        var dmgMax     = (int)(scale * (dieCount * dieSize + dieBonus) + enhBonus);
+        var avgDmg     = (dmgMax + dmgNominal) / 2f;
+        var raw        = avgDmg * ((1 - critRange * 0.05f) + critRange * 0.05f * critMod);
+        return (float)Math.Round(raw, 2);
+    }
+
+    private static string BuildDamageLine(IPropertyCollection props, float enhBonus, EffectContext ctx)
     {
         var diceStr = props.GetStringProperty((uint)DdoProperty.DamageValue)?.StringValue;
         if (diceStr == null) return null;
 
-        var modifier  = props.GetFloatPropertyValue((uint)DdoProperty.BaseWeaponDamageDiceModifier) ?? 1.0f;
-        var critRange = props.GetInt32PropertyValue((uint)DdoProperty.Combat_CriticalHitRange) ?? 0;
-        var critMod   = props.GetInt32PropertyValue((uint)DdoProperty.Combat_CriticalHitMod) ?? 2;
-
-        var damageType = GetBitFieldValues(props, (uint)DdoProperty.DamageFlags)
-            .FirstOrDefault(f => f != "Undef" && !f.Contains("SpellPoint")) ?? "";
+        var modifier = props.GetFloatPropertyValue((uint)DdoProperty.BaseWeaponDamageDiceModifier) ?? 1.0f;
 
         var diceDisplay = Math.Abs(modifier - 1.0f) < 0.0001f
             ? diceStr
             : $"{modifier:0.##}[{diceStr}]";
 
-        return $"{diceDisplay} {damageType} {21 - critRange}-20x{critMod}".Trim();
+        var damageTypes = GetBitFieldValues(props, (uint)DdoProperty.DamageFlags)
+            .Concat(ctx.GetAppendedBitFieldValues((uint)DdoProperty.DamageFlags))
+            .Where(f => f != "Undef" && !f.Contains("SpellPoint"))
+            .Distinct()
+            .ToList();
+
+        var sb = new System.Text.StringBuilder(diceDisplay);
+        if (enhBonus >= 1f) sb.Append($" + {(int)enhBonus}");
+        if (damageTypes.Count > 0) sb.Append($" {string.Join(", ", damageTypes)}");
+        return sb.ToString().Trim();
     }
 
-    private static string BuildHitDmgAbility(IPropertyCollection props)
+    private static string BuildCriticalRollLine(IPropertyCollection props)
     {
-        var hitFlags = GetBitFieldValues(props, (uint)DdoProperty.Combat_HitAbilityMod_Multiple).ToList();
-        var dmgFlags = GetBitFieldValues(props, (uint)DdoProperty.Combat_DamageAbilityMod_Multiple).ToList();
-        if (!hitFlags.Any() && !dmgFlags.Any()) return null;
+        var critRange = props.GetInt32PropertyValue((uint)DdoProperty.Combat_CriticalHitRange) ?? 0;
+        var critMod   = props.GetInt32PropertyValue((uint)DdoProperty.Combat_CriticalHitMod) ?? 2;
+        return $"({critRange * 5}%) {21 - critRange}-20 / x{critMod}";
+    }
 
-        static string Abbrev(string s) => s?.Length >= 3 ? s.Substring(0, 3) : s ?? "?";
-        return $"{Abbrev(hitFlags.FirstOrDefault())}/{Abbrev(dmgFlags.FirstOrDefault())}";
+    private static string AbbrevAbility(string s) =>
+        s?.Length >= 3 ? s.Substring(0, 3).ToUpper() : s?.ToUpper() ?? "?";
+
+    private static string BuildAttackMod(IPropertyCollection props)
+    {
+        var flags = GetBitFieldValues(props, (uint)DdoProperty.Combat_HitAbilityMod_Multiple).ToList();
+        return flags.Any() ? string.Join(", ", flags.Select(AbbrevAbility)) : null;
+    }
+
+    private static string BuildDamageMod(IPropertyCollection props)
+    {
+        var flags = GetBitFieldValues(props, (uint)DdoProperty.Combat_DamageAbilityMod_Multiple).ToList();
+        return flags.Any() ? string.Join(", ", flags.Select(AbbrevAbility)) : null;
     }
 
     private static readonly uint[] StaticMutatorIds = [
@@ -288,15 +433,17 @@ public class ItemController : Controller
         }
     }
 
-    private static List<EffectInfo> GetEffectNames(IPropertyCollection props, out ClickieData clickie, out EffectContext effectCtx, out string boundLine)
+    private static List<EffectInfo> GetEffectNames(IPropertyCollection props, out ClickieInfo clickie, out EffectContext effectCtx, out string boundLine, out int? minLevelFromEffects, out bool isExclusive)
     {
         clickie = null;
         boundLine = null;
+        minLevelFromEffects = null;
+        isExclusive = false;
         var effectsArray = props.GetArrayProperty((uint)DdoProperty.Effect_OnCreationEffects);
         if (effectsArray == null) { effectCtx = new EffectContext(props); return new List<EffectInfo>(); }
 
         var canBeUsed = props.GetBytePropertyValue((uint)DdoProperty.Usage_CanBeUsed) == 1;
-        var ctx       = new EffectContext(props);
+        var ctx = new EffectContext(props);
 
         // Collect all effect entries up front
         var entries = new List<EffectEntry>();
@@ -320,12 +467,31 @@ public class ItemController : Controller
                     DatCache.Index.NameLookup.TryGetValue(effectId, out fallback);
             }
 
-            entries.Add(new EffectEntry(effectId, effectProps, fallback));
+            entries.Add(new EffectEntry { EffectId = effectId, Props = effectProps, FallbackName = fallback });
         }
 
         // Pass 1: apply all mods from all effects into context before resolving any names.
         foreach (var entry in entries) {
             if (entry.Props != null) EffectResolver.ApplyMods(entry.Props, ctx);
+        }
+
+        // Named items don't have an effect that writes Treasure_BaseLevel — the real game seeds it
+        // externally. Seed it here so the static mutators (Item Value, Min Level) compute correctly.
+        if (!(ctx.GetValue((uint)DdoProperty.Treasure_BaseLevel) > 0)) {
+            int? seedLevel = props.GetInt32PropertyValue((uint)DdoProperty.Usage_MinLevel);
+            if (!(seedLevel > 0)) {
+                foreach (var entry in entries) {
+                    var name = entry.Props?.Name ?? entry.FallbackName;
+                    if (name != null &&
+                        name.StartsWith("Required Level:", StringComparison.OrdinalIgnoreCase) &&
+                        int.TryParse(name.AsSpan("Required Level:".Length).Trim(), out var lvl)) {
+                        seedLevel = lvl;
+                        break;
+                    }
+                }
+            }
+            if (seedLevel > 0)
+                ctx.ApplyArithmetic(PropertyOp.Set, (uint)DdoProperty.Treasure_BaseLevel, seedLevel.Value);
         }
 
         // Apply static mutators now that Treasure_BaseLevel is established.
@@ -334,100 +500,150 @@ public class ItemController : Controller
         effectCtx = ctx;
 
         // Pass 2: resolve each effect's display name using the fully-populated context
-        var names       = new List<EffectInfo>();
-        string spellName    = null;
-        int?   spellCl      = null;
-        string maxCharges   = null;
-        string rechargeText = null;
+        var names = new List<EffectInfo>();
+        ClickieInfo partialClickie = null;
+        int? maxCharges = null;
+        int? dailyRecharge = null;
 
         foreach (var entry in entries) {
-            // Skip system/internal effects that carry a mutation type flag
-            if (entry.Props != null) {
-                var mutType = entry.Props.GetBitFieldProperty((uint)DdoProperty.Effect_MutationType);
-                if (mutType?.Values?.Any() == true) continue;
-            }
-
-            EffectInfo resolved;
-            if (entry.Props != null) {
-                resolved = EffectResolver.ResolveName(entry.Props, ctx);
-            } else {
-                resolved = new EffectInfo(entry.FallbackName, null);
-            }
+            EffectInfo resolved = entry.Props != null
+                ? EffectResolver.ResolveName(entry.Props, ctx)
+                : new EffectInfo { Name = entry.FallbackName };
 
             if (string.IsNullOrEmpty(resolved.Name)) continue;
 
-            // "Bound to Account" is shown as a field, not in the effects list
+            // Extract metadata from non-displayed effects before filtering them out.
+            // "Bound to Account" → shown as a field, not in the effects list.
             if (resolved.Name.Equals("Bound to Account", StringComparison.OrdinalIgnoreCase)) {
                 boundLine = resolved.Name;
                 continue;
             }
 
+            // "Required Level: N" → shown as the Minimum Level field, not as an effect.
+            if (resolved.Name.StartsWith("Required Level:", StringComparison.OrdinalIgnoreCase)) {
+                if (int.TryParse(resolved.Name.AsSpan("Required Level:".Length).Trim(), out var lvl))
+                    minLevelFromEffects = lvl;
+                continue;
+            }
+
+            // Absorb clickie effects into the Clickie field rather than the effects list.
             if (canBeUsed) {
                 if (resolved.Name.StartsWith("Spell: ", StringComparison.OrdinalIgnoreCase)) {
-                    spellName = resolved.Name.Substring("Spell: ".Length);
-                    spellCl   = TryGetCasterLevel(entry.EffectId);
+                    partialClickie = TryGetSpellDetails(entry.EffectId) ?? new ClickieInfo();
                     continue;
                 }
                 if (resolved.Name.Contains("Max Charges", StringComparison.OrdinalIgnoreCase)) {
-                    maxCharges = resolved.Name;
+                    var idx = resolved.Name.LastIndexOf('=');
+                    if (idx >= 0 && int.TryParse(resolved.Name.AsSpan(idx + 1).Trim(), out var n))
+                        maxCharges = n;
                     continue;
                 }
                 if (resolved.Name.StartsWith("Recharge", StringComparison.OrdinalIgnoreCase)) {
-                    rechargeText = resolved.Name;
+                    var parts = resolved.Name.Split(' ');
+                    if (parts.Length >= 2 && int.TryParse(parts[1].Split('/')[0], out var d))
+                        dailyRecharge = d;
                     continue;
                 }
             }
 
+            if (resolved.Name.Equals("Exclusive", StringComparison.OrdinalIgnoreCase)) {
+                isExclusive = true;
+                continue;
+            }
+
+            // Only display effects the game client shows to the player.
+            // Exception: augment slot effects have IsDisplayedOnClient = 0 but the game always
+            // shows them under the Augments section, so let them through.
+            var trimmedName = resolved.Name.TrimEnd();
+            var trimmedLower = trimmedName.ToLowerInvariant();
+            var isAugmentSlotEffect = trimmedLower.EndsWith("augment slot")
+                || trimmedLower.StartsWith("lamordia:")
+                || trimmedLower.StartsWith("isle of dread");
+            if (!isAugmentSlotEffect &&
+                entry.Props != null &&
+                entry.Props.GetBytePropertyValue((uint)DdoProperty.Effect_IsDisplayedOnClient) != 1)
+                continue;
+
             names.Add(resolved);
         }
 
-        if (spellName != null)
-            clickie = new ClickieData(spellName, spellCl, maxCharges, rechargeText);
+        if (partialClickie != null)
+            clickie = partialClickie with { MaxCharges = maxCharges, DailyRecharge = dailyRecharge };
 
         return names;
     }
 
-    private static int? TryGetCasterLevel(uint effectDid)
+    private static ClickieInfo TryGetSpellDetails(uint effectDid)
     {
         try {
-            var convertedId = effectDid >= 0x70000000 && effectDid < 0x71000000
-                ? effectDid + 0x09000000 : effectDid;
-            var ep = DatSource.PropertyMaster.GetPropertyCollection(convertedId);
+            var ep = DatSource.PropertyMaster.GetPropertyCollection(EffectResolver.ConvertId(effectDid));
             if (ep == null) return null;
 
+            var iconId = ep.GetInt32PropertyValue((uint)DdoProperty.Effect_Icon);
+            var iconUrl = iconId is > 0 ? $"/Image/0x{(uint)iconId.Value:X8}" : null;
+
             var modArray = ep.GetArrayProperty((uint)DdoProperty.Mod_Array);
-            if (modArray == null) return null;
+            if (modArray == null) return new ClickieInfo { SpellIconUrl = iconUrl };
+
+            int? cl = null;
+            uint spellEntityId = 0;
 
             foreach (var mod in modArray.Properties) {
                 if (mod is not IArrayProperty modArr) continue;
                 var channel = modArr.GetEnumProperty((uint)DdoProperty.Mod_Channel);
                 if (channel == null) continue;
-                if (Enum.GetName(typeof(EffectChannel), channel.UInt32Value) == "CasterLevel") {
+                var ch = (EffectChannel)channel.UInt32Value.Value;
+
+                if (ch == EffectChannel.CasterLevel) {
                     var floatCl = modArr.GetFloatPropertyValue((uint)DdoProperty.Spell_CasterLevel);
-                    if (floatCl != null) return (int)floatCl.Value;
-                    var intCl = modArr.GetInt32PropertyValue((uint)DdoProperty.Spell_CasterLevel);
-                    if (intCl != null) return intCl.Value;
+                    if (floatCl != null) cl = (int)floatCl.Value;
+                    else {
+                        var intCl = modArr.GetInt32PropertyValue((uint)DdoProperty.Spell_CasterLevel);
+                        if (intCl != null) cl = intCl.Value;
+                    }
+                } else if (ch == EffectChannel.Spell) {
+                    var spellRef = modArr.GetInt32PropertyValue((uint)DdoProperty.Spell);
+                    if (spellRef != null) spellEntityId = EffectResolver.ConvertId((uint)spellRef.Value);
                 }
             }
+
+            if (spellEntityId == 0) return new ClickieInfo { CasterLevel = cl, SpellIconUrl = iconUrl };
+
+            var spellProps = DatSource.PropertyMaster.GetPropertyCollection(spellEntityId);
+            var masterRef = spellProps?.GetInt32PropertyValue((uint)DdoProperty.Spell_Master);
+            if (masterRef == null) return new ClickieInfo { CasterLevel = cl, SpellIconUrl = iconUrl };
+
+            var master = DatSource.PropertyMaster.GetPropertyCollection(EffectResolver.ConvertId((uint)masterRef.Value));
+            if (master == null) return new ClickieInfo { CasterLevel = cl, SpellIconUrl = iconUrl };
+
+            var masterIconId = master.GetInt32PropertyValue((uint)DdoProperty.Action_Action_m_didIcon);
+            if (masterIconId is > 0) iconUrl = $"/Image/0x{(uint)masterIconId.Value:X8}";
+
+            var targets = GetBitFieldValues(master, (uint)DdoProperty.Action_Action_m_eTargetType)
+                .Where(t => t != "None").ToList();
+            var schools = GetBitFieldValues(master, (uint)DdoProperty.Spell_School)
+                .Where(s => s != "None").ToList();
+            var srByte = master.GetBytePropertyValue((uint)DdoProperty.Spell_CanBeResisted);
+            var descText = master.GetStringInfoProperty((uint)DdoProperty.Action_Action_m_siDescription)
+                ?.GetText(DatSource.PropertyMaster, null, null);
+            var spellName = master.GetStringInfoProperty((uint)DdoProperty.Action_Action_m_siName)
+                ?.GetText(DatSource.PropertyMaster, null, null);
+
+            return new ClickieInfo {
+                SpellName = spellName,
+                CasterLevel = cl,
+                SpellIconUrl = iconUrl,
+                Target = targets.Count > 0 ? string.Join(", ", targets) : null,
+                School = schools.Count > 0 ? string.Join(", ", schools) : null,
+                CanBeResisted = srByte != null ? srByte.Value == 1 : null,
+                SpellDescription = descText,
+            };
         }
         catch { }
         return null;
     }
 
-    private static string BuildClickieText(ClickieData c)
-    {
-        var sb = new System.Text.StringBuilder(c.SpellName);
-        if (c.CasterLevel != null) sb.Append($" (Caster Level: {c.CasterLevel})");
-        sb.Append(" \u2014 ");
-        if (c.MaxChargesText != null) sb.Append(c.MaxChargesText);
-        if (c.RechargeText != null) {
-            if (c.MaxChargesText != null) sb.Append(", ");
-            sb.Append(c.RechargeText);
-        }
-        return sb.ToString();
-    }
-
-    private static List<string> GetAugmentSlots(IPropertyCollection props)
+    private static List<string> GetAugmentSlots(IPropertyCollection props, uint weenieType)
     {
         var arr = props.GetArrayProperty((uint)DdoProperty.Augment_SlotArray);
         if (arr == null) return new List<string>();
@@ -443,10 +659,25 @@ public class ItemController : Controller
             var text = nameProp.GetText(DatSource.PropertyMaster, null, null);
             if (string.IsNullOrEmpty(text)) continue;
 
+            // Lamordia slot names don't embed the item category (unlike IoD which already includes "(Weapon)" etc.).
+            // Derive it from the item's WeenieType so the view can render the colored "(Type)" suffix.
+            if (text.StartsWith("Lamordia:", StringComparison.OrdinalIgnoreCase) && !text.Contains('(')) {
+                var typeSuffix = LamordiaSlotItemType(weenieType);
+                if (typeSuffix != null) text = $"{text} ({typeSuffix})";
+            }
+
             slots.Add(text);
         }
         return slots;
     }
+
+    private static string LamordiaSlotItemType(uint weenieType) => weenieType switch {
+        WeenieTypes.Weapon  => "Weapon",
+        WeenieTypes.Shield  => "Shield",
+        WeenieTypes.Armor   => "Armor",
+        WeenieTypes.Jewelry or WeenieTypes.Clothing => "Accessory",
+        _ => null
+    };
 
     private static string GetBindingText(IPropertyCollection props, string boundLine = null)
     {
@@ -459,8 +690,8 @@ public class ItemController : Controller
             (boundLine != null && boundLine.IndexOf("Account", StringComparison.OrdinalIgnoreCase) >= 0);
 
         var scope = isAccountBound ? "Account" : "Character";
-        if (onAcquire == 1) return $"Bound to {scope} (from Acquisition)";
-        if (onEquip   == 1) return $"Bound to {scope} (from Equipping)";
+        if (onAcquire == 1) return $"Binds to {scope} on Acquire";
+        if (onEquip   == 1) return $"Binds to {scope} on Equip";
         return null;
     }
 
@@ -474,6 +705,8 @@ public class ItemController : Controller
     }
 
     private static string MapSlotName(string slot) => slot switch {
+        "Weapon1" => "Main Hand",
+        "Weapon2" => "Off Hand",
         "Finger1" => "First Finger",
         "Finger2" => "Second Finger",
         "Head"    => "Head",
@@ -537,7 +770,7 @@ public class ItemController : Controller
                         descs.Add(text);
                 }
 
-                return new SetBonusInfo(name, descs);
+                return new SetBonusInfo { Name = name, Descriptions = descs };
             }
         }
         catch { }
@@ -560,8 +793,78 @@ public class ItemController : Controller
         return prop.Values ?? Enumerable.Empty<string>();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    private static List<RecipeGroup> GetRecipes(uint itemId)
+    {
+        if (!DatCache.RecipeMap.TryGetValue(itemId, out var recipes) || recipes.Count == 0)
+            return new List<RecipeGroup>();
 
-    private record ClickieData(string SpellName, int? CasterLevel, string MaxChargesText, string RechargeText);
-    private record EffectEntry(uint EffectId, IPropertyCollection Props, string FallbackName);
+        return recipes
+            .GroupBy(r => r.DeviceName ?? "Unknown")
+            .Select(g => new RecipeGroup {
+                DeviceName = g.Key,
+                Recipes = g.Select(r => BuildRecipeRow(r, itemId)).Where(r => r != null).ToList()
+            })
+            .Where(g => g.Recipes.Count > 0)
+            .ToList();
+    }
+
+    private static RecipeRow BuildRecipeRow(RecipeData recipeData, uint itemId)
+    {
+        var recipeProps = DatSource.PropertyMaster.GetPropertyCollection(recipeData.RecipeId);
+        if (recipeProps == null) return null;
+
+        var cost = new List<string>();
+        var slotList = recipeProps.GetArrayProperty((uint)DdoProperty.Recipe_Slot_List);
+        if (slotList != null) {
+            foreach (var slot in slotList.Properties) {
+                if (slot.PropertyId != (uint)DdoProperty.Recipe_Slot_Entry) continue;
+                if (slot is not IInt32Property slotRef) continue;
+
+                var slotDefId = EffectResolver.ConvertId((uint)(slotRef.Int32Value ?? 0));
+                if (slotDefId == 0) continue;
+
+                var slotDef = DatSource.PropertyMaster.GetPropertyCollection(slotDefId);
+                var ingredientId = slotDef?.GetInt32PropertyValue((uint)DdoProperty.Ingredient_Entity);
+                if (ingredientId != null) {
+                    var normalizedIngId = EffectResolver.ConvertId((uint)ingredientId.Value);
+                    if (normalizedIngId == itemId) continue;
+                }
+
+                var slotName = slotRef.ReferencedObject as string ?? slotDef?.Name;
+                if (!string.IsNullOrEmpty(slotName))
+                    cost.Add(slotName);
+            }
+        }
+
+        var removed = GetMutationRefs(recipeProps, (uint)DdoProperty.Recipe_Result_RemoveMutations);
+        var added   = GetMutationRefs(recipeProps, (uint)DdoProperty.Recipe_Result_AddMutations);
+
+        return new RecipeRow {
+            Name = recipeData.Name ?? $"0x{recipeData.RecipeId:X8}",
+            Cost = cost,
+            Removed = removed,
+            Added = added,
+        };
+    }
+
+    private static List<string> GetMutationRefs(IPropertyCollection recipeProps, uint arrayId)
+    {
+        var arr = recipeProps.GetArrayProperty(arrayId);
+        if (arr == null) return new List<string>();
+
+        var names = new List<string>();
+        foreach (var entry in arr.Properties) {
+            if (entry.PropertyId != (uint)DdoProperty.Recipe_Result_MutationDID) continue;
+            if (entry is not IInt32Property ip) continue;
+
+            var name = ip.ReferencedObject as string;
+            if (string.IsNullOrEmpty(name)) {
+                var did = EffectResolver.ConvertId((uint)(ip.Int32Value ?? 0));
+                name = DatSource.PropertyMaster.GetPropertyCollection(did)?.Name;
+            }
+            if (!string.IsNullOrEmpty(name))
+                names.Add(name);
+        }
+        return names;
+    }
 }

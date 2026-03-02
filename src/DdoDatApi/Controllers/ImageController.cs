@@ -85,6 +85,7 @@ public class ImageController : ControllerBase
             if (underlayer == null) return null;
 
             var backgroundId = props.GetInt32PropertyValue((uint)DdoProperty.Item_BackgroundLayer)
+                ?? props.GetInt32PropertyValue((uint)DdoProperty.Item_ArmorBackgroundLayer)
                 ?? props.GetInt32PropertyValue((uint)DdoProperty.Icon_Target_m_didBackgroundLayer);
 
             var weenieType = props.GetEnumProperty((uint)DdoProperty.WeenieType);
@@ -97,13 +98,12 @@ public class ImageController : ControllerBase
             var specialUnderlayId = props.GetInt32PropertyValue((uint)DdoProperty.Icon_Target_m_didUnderLayer);
             if (specialUnderlayId != null && specialUnderlayId != 0)
             {
-                var secondUnderlay = DatSource.ImageExporter.GetPngImage((uint)specialUnderlayId.Value);
+                using var secondUnderlay = DatSource.ImageExporter.GetPngImage((uint)specialUnderlayId.Value);
                 if (secondUnderlay != null && background != null)
                 {
                     using var g = Graphics.FromImage(background);
                     g.DrawImage(secondUnderlay, 0, 0);
                 }
-                secondUnderlay?.Dispose();
             }
 
             var iconId = props.GetInt32PropertyValue((uint)DdoProperty.Item_Icon)

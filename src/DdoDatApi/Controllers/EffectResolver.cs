@@ -17,6 +17,7 @@ namespace DdoDatApi.Controllers;
 internal class EffectContext
 {
     private readonly Dictionary<uint, float> _overlay = new();
+    private readonly Dictionary<uint, List<string>> _bitFieldAppended = new();
     private readonly IPropertyCollection _base;
 
     public EffectContext(IPropertyCollection baseProps) => _base = baseProps;
@@ -33,6 +34,16 @@ internal class EffectContext
         if (uv != null) return (float)uv.Value;
         return null;
     }
+
+    public void AppendBitFieldValues(uint propertyId, IEnumerable<string> values)
+    {
+        if (!_bitFieldAppended.TryGetValue(propertyId, out var list))
+            _bitFieldAppended[propertyId] = list = new List<string>();
+        list.AddRange(values);
+    }
+
+    public IEnumerable<string> GetAppendedBitFieldValues(uint propertyId) =>
+        _bitFieldAppended.TryGetValue(propertyId, out var list) ? list : Enumerable.Empty<string>();
 
     public void ApplyArithmetic(PropertyOp op, uint destId, float operand)
     {
@@ -66,42 +77,6 @@ internal static class EffectResolver
     // ── Public API ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Resolves the display name for a single effect, and updates the context
-    /// with any property changes the effect's mods produce.
-    /// Returns null on failure; callers should fall back to the index name.
-    /// </summary>
-    public static string ResolveEffect(IPropertyCollection effectProps, EffectContext ctx)
-    {
-        try
-        {
-            // Case 1: creation effect
-            var creationEntity = effectProps.GetInt32PropertyValue((uint)DdoProperty.Creation_Entity);
-            if (creationEntity is not null and not 0) {
-                var entityProps = DatSource.PropertyMaster.GetPropertyCollection(ConvertId((uint)creationEntity.Value));
-                var entityName  = entityProps?.Name ?? $"0x{creationEntity.Value:X8}";
-                var qty         = effectProps.GetInt32PropertyValue((uint)DdoProperty.Creation_Quantity);
-                return qty is > 1 ? $"Create {entityName} x{qty}" : $"Create {entityName}";
-            }
-
-            // Case 2: mod-array effect
-            ApplyMods(effectProps, ctx);
-
-            // Evaluate display equations for {0}, {1}, {2} replacements
-            var replacements = new List<string>();
-            foreach (var eqId in DisplayEquationIds) {
-                var eq  = effectProps.GetArrayProperty(eqId);
-                if (eq == null) continue;
-                var rep = EvaluateEquation(eq, ctx);
-                if (rep != null) replacements.Add(rep);
-            }
-
-            var nameProp = effectProps.GetStringInfoProperty((uint)DdoProperty.Effect_Name);
-            return nameProp != null ? ResolveStringInfo(nameProp, replacements) : null;
-        }
-        catch { return null; }
-    }
-
-    /// <summary>
     /// Resolves the display name and description for a single effect using an already-complete context.
     /// Does NOT apply mods — call ApplyMods separately (or use the two-pass pattern).
     /// Returns null Name on failure; callers should fall back to the index name.
@@ -117,7 +92,7 @@ internal static class EffectResolver
                 var entityName  = entityProps?.Name ?? $"0x{creationEntity.Value:X8}";
                 var qty         = effectProps.GetInt32PropertyValue((uint)DdoProperty.Creation_Quantity);
                 var creationName = qty is > 1 ? $"Create {entityName} x{qty}" : $"Create {entityName}";
-                return new EffectInfo(creationName, null);
+                return new EffectInfo { Name = creationName };
             }
 
             // Evaluate display equations for {0}, {1}, {2} replacements
@@ -135,9 +110,9 @@ internal static class EffectResolver
             var descProp = effectProps.GetStringInfoProperty((uint)DdoProperty.Effect_Description);
             var resolvedDesc = descProp != null ? ResolveStringInfo(descProp, replacements) : null;
 
-            return new EffectInfo(resolvedName, resolvedDesc);
+            return new EffectInfo { Name = resolvedName, Description = resolvedDesc };
         }
-        catch { return new EffectInfo(null, null); }
+        catch { return new EffectInfo(); }
     }
 
     // ── Mod processing ────────────────────────────────────────────────────
@@ -160,14 +135,22 @@ internal static class EffectResolver
 
         var op = (PropertyOp)opProp.UInt32Value;
 
+        var dest = mod.GetUInt32PropertyValue((uint)DdoProperty.Mod_Destination);
+        var src  = mod.GetUInt32PropertyValue((uint)DdoProperty.Mod_Source);
+        if (dest == null || src == null) return;
+
+        // Bitwise OR: append flag names from the source bitfield property
+        if (op == PropertyOp.Or) {
+            var srcBitField = mod.GetBitFieldProperty(src.Value);
+            if (srcBitField?.Values?.Count > 0)
+                ctx.AppendBitFieldValues(dest.Value, srcBitField.Values);
+            return;
+        }
+
         // Only arithmetic ops affect context values relevant to equation display
         if (op is not (PropertyOp.Set or PropertyOp.Add or PropertyOp.Subtract
                        or PropertyOp.Multiply or PropertyOp.Divide))
             return;
-
-        var dest = mod.GetUInt32PropertyValue((uint)DdoProperty.Mod_Destination);
-        var src  = mod.GetUInt32PropertyValue((uint)DdoProperty.Mod_Source);
-        if (dest == null || src == null) return;
 
         // Base operand: the mod's own property with ID = Mod_Source (may be Float, Int32, or UInt32)
         float baseOperand = mod.GetFloatPropertyValue(src.Value)
