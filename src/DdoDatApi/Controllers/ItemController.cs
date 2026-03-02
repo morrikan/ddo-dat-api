@@ -753,12 +753,12 @@ public class ItemController : Controller
         "Head"    => "Head",
         "Neck"    => "Neck",
         "Trinket" => "Trinket",
-        "Cloak"   => "Back",
+        "Cloak"   => "Cloak",
         "Arms"    => "Wrists",
-        "Hands"   => "Gloves",
-        "Chest"   => "Body",
+        "Hands"   => "Hands",
+        "Chest"   => "Armor",
         "Legs"    => "Legs",
-        "Feet"    => "Boots",
+        "Feet"    => "Feet",
         "Belt"    => "Waist",
         _         => slot
     };
