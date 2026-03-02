@@ -134,11 +134,12 @@
 .panel-main-proficiency, .panel-main-race-excluded, .panel-main-exclusive { padding-bottom: 3px; color: #C0C0C0; }
 .panel-main-description { font-size: 12px; line-height: 1.3em; color: #C0C0C0; padding: 4px 0; }
 .panel-main-effect-list { color: #ABA060; margin-bottom: 4px; }
-.panel-main-effect-header { color: #C0C0C0; font-size: 12px; line-height: 1.4em; }
+.panel-main-effect-header { color: #C0C0C0; font-size: 12px; line-height: 1.4em; padding-bottom: 2px; }
 .panel-main-effect      { line-height: 1.2em; }
 .panel-main-effect-list-name,
 .panel-sub-effect        { font-size: 12px; color: white; }
 .panel-main-effect-list-name .effect-desc { color: #ABA060; font-size: 12px; }
+.panel-set-bonus-tier { padding-left: 5px; }
 .panel-set-bonus-tier::before { content: '\2022  '; }
 .panel-equip-slot { text-align: right; color: #C0C0C0; font-size: 12px; }
 .panel-main-effect-list-name::before,
@@ -160,9 +161,10 @@
 .panel-main-armor > div > span:first-child { color: white; padding-right: 4px; }
 .panel-main-shield-bonus            { color: #66FF99; }
 .panel-main-shield-damage-reduction { color: #66FF99; }
+.panel-main-set-bonus-header { color: #C0C0C0; padding-bottom: 3px; }
 .panel-main-set-bonus { padding-bottom: 3px; }
 .panel-main-set-bonus-name { color: #79f2e6; padding-bottom: 1px; }
-.panel-main-set-bonus-line { color: #C0C0C0; font-size: 12px; }
+.panel-main-set-bonus-line { color: #C0C0C0; font-size: 12px; padding-bottom: 1px; }
 .panel-augment-slot-name { color: #88AAFF; }
 .panel-augment-empty { color: #C0C0C0; }
 .panel-main-clicky { margin-top: 3px; color: #ABA060; }

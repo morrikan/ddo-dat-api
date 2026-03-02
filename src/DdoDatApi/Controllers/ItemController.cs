@@ -47,21 +47,22 @@ public class ItemController : Controller
     {
         var weenieType = props.GetWeenieType();
         var theme = GetTheme(props);
-        var effects = GetEffectNames(props, out var clickie, out var effectCtx, out var boundLine, out var minLevelFromEffects, out var isExclusive);
+        var resolved = ResolveEffects(props);
         var augSlots = GetAugmentSlots(props, weenieType);
+        augSlots.AddRange(resolved.AugmentSlots);
         var setBonus1 = GetSetBonusInfo(props, (uint)DdoProperty.Item_SetBonus_1);
         var setBonus2 = GetSetBonusInfo(props, (uint)DdoProperty.Item_SetBonus_2);
 
         // Prefer Usage_MinLevel from raw props; fall back to Treasure_BaseLevel set by effects
         var minLevel = props.GetInt32PropertyValue((uint)DdoProperty.Usage_MinLevel);
         if (minLevel == null || minLevel == 0) {
-            var baseLevel = effectCtx.GetValue((uint)DdoProperty.Treasure_BaseLevel);
+            var baseLevel = resolved.EffectCtx.GetValue((uint)DdoProperty.Treasure_BaseLevel);
             if (baseLevel is > 0) minLevel = (int)baseLevel.Value;
         }
         if (minLevel == null || minLevel == 0)
-            minLevel = minLevelFromEffects;
+            minLevel = resolved.MinLevel;
 
-        var enhBonus = effectCtx.GetValue((uint)DdoProperty.Combat_EnhancementBonus) ?? 0f;
+        var enhBonus = resolved.EffectCtx.GetValue((uint)DdoProperty.Combat_EnhancementBonus) ?? 0f;
 
         // Material is computed once; used by both the table row and the durability block in the view.
         string material = weenieType != WeenieTypes.Augment ? GetMaterialName(props) : null;
@@ -71,22 +72,22 @@ public class ItemController : Controller
         if (weenieType != WeenieTypes.Augment) {
             var durBase = props.GetInt32PropertyValue((uint)DdoProperty.MaxDurability_Base);
             if (durBase != null) {
-                var durBonus = effectCtx.GetValue((uint)DdoProperty.MaxDurability_Effect);
+                var durBonus = resolved.EffectCtx.GetValue((uint)DdoProperty.MaxDurability_Effect);
                 durability = durBase.Value + (int)(durBonus ?? 0f);
-                var h = effectCtx.GetValue((uint)DdoProperty.Durability_Hardness);
+                var h = resolved.EffectCtx.GetValue((uint)DdoProperty.Durability_Hardness);
                 if (h is > 0) durabilityHardness = (int)h.Value;
             }
         }
 
-        var baseValueF = effectCtx.GetValue((uint)DdoProperty.Item_Value);
+        var baseValueF = resolved.EffectCtx.GetValue((uint)DdoProperty.Item_Value);
         int? baseValue = baseValueF is > 0 ? (int)(baseValueF.Value / 1000f) : null;
 
         var enc = props.GetInt32PropertyValue((uint)DdoProperty.Inventory_Encumbrance);
         var weight = enc != null ? $"{enc.Value / 100.0:0.00} lbs" : null;
 
-        var binding = GetBindingText(props, boundLine);
-        var desc = props.GetStringInfoProperty((uint)DdoProperty.Item_Description)
-                       ?.GetText(DatSource.PropertyMaster, null, null);
+        var binding = GetBindingText(props, resolved.BoundLine);
+        var desc = FormatGameText(props.GetStringInfoProperty((uint)DdoProperty.Item_Description)
+                       ?.GetText(DatSource.PropertyMaster, null, null));
 
         var acceptsSentience = props.GetBytePropertyValue((uint)DdoProperty.AcceptsSentience) == 1;
 
@@ -117,11 +118,11 @@ public class ItemController : Controller
         switch (weenieType) {
             case WeenieTypes.Weapon: {
                 typeLine = GetEnumDisplayName<WeaponType>(props, (uint)DdoProperty.Combat_WeaponType);
-                damageLine = BuildDamageLine(props, enhBonus, effectCtx);
+                damageLine = BuildDamageLine(props, enhBonus, resolved.EffectCtx);
                 critRollLine = BuildCriticalRollLine(props);
                 attackMod = BuildAttackMod(props);
                 damageMod = BuildDamageMod(props);
-                bdr = BuildBaseDamageRating(props, effectCtx);
+                bdr = BuildBaseDamageRating(props, resolved.EffectCtx);
                 isTwoHanded = GetBitFieldValues(props, (uint)DdoProperty.Inventory_PrecludedSlot).Contains("Weapon2");
                 break;
             }
@@ -145,11 +146,11 @@ public class ItemController : Controller
                 if (rawSf is > 0f) spellFailureChance = (int)Math.Round(rawSf.Value * 100f);
                 var rawAtk = props.GetInt32PropertyValue((uint)DdoProperty.Combat_ShieldAttackPenalty);
                 if (rawAtk is < 0) attackPenalty = rawAtk;
-                damageLine = BuildDamageLine(props, enhBonus, effectCtx);
+                damageLine = BuildDamageLine(props, enhBonus, resolved.EffectCtx);
                 critRollLine = BuildCriticalRollLine(props);
                 attackMod = BuildAttackMod(props);
                 damageMod = BuildDamageMod(props);
-                bdr = BuildBaseDamageRating(props, effectCtx);
+                bdr = BuildBaseDamageRating(props, resolved.EffectCtx);
                 break;
             }
             case WeenieTypes.Armor: {
@@ -189,7 +190,7 @@ public class ItemController : Controller
             Title = props.Name ?? "Item",
             Theme = theme,
             WeenieType = weenieType,
-            Effects = effects,
+            Effects = resolved.Effects,
             AugmentSlots = augSlots,
             SetBonus1 = setBonus1,
             SetBonus2 = setBonus2,
@@ -202,9 +203,9 @@ public class ItemController : Controller
             AcceptsSentience = acceptsSentience,
             MinLevel = minLevel is > 0 ? minLevel : null,
             Binding = binding,
-            IsExclusive = isExclusive,
+            IsExclusive = resolved.IsExclusive,
             RaceExcluded = raceExcluded,
-            Clickie = clickie,
+            Clickie = resolved.Clickie,
             Description = desc,
             DamageLine = damageLine,
             CriticalRollLine = critRollLine,
@@ -224,7 +225,7 @@ public class ItemController : Controller
             DurabilityHardness = durabilityHardness,
             Weight = weight,
             BaseValue = baseValue,
-            BoundLine = boundLine,
+            BoundLine = resolved.BoundLine,
         };
 
         vm.TableRows = BuildTableRows(vm);
@@ -285,7 +286,7 @@ public class ItemController : Controller
         }
 
         if (!string.IsNullOrWhiteSpace(vm.Description))
-            rows.Add(new TableRow { Field = "Description", Value = vm.Description });
+            rows.Add(new TableRow { Field = "Description", Value = vm.Description, IsHtml = true });
 
         if (!vm.IsAugment) {
             if (vm.Material != null) rows.Add(new TableRow { Field = "Material", Value = vm.Material });
@@ -345,6 +346,35 @@ public class ItemController : Controller
             1 => "silver",    // Random
             _ => "copper"
         };
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _rgbTagRegex =
+        new(@"<RGB=(#[0-9a-fA-F]{6})>(.*?)</RGB>", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Converts game markup to HTML: &lt;RGB=#hex&gt;text&lt;/RGB&gt; → colored spans, literal \n → &lt;br/&gt;.
+    /// Result is pre-encoded HTML safe to render with Html.Raw.
+    /// </summary>
+    private static string FormatGameText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+
+        // Extract RGB regions first, then HTML-encode the plain parts
+        var parts = new System.Text.StringBuilder();
+        int pos = 0;
+        foreach (System.Text.RegularExpressions.Match m in _rgbTagRegex.Matches(text)) {
+            // Encode and append text before this match
+            var before = text[pos..m.Index];
+            parts.Append(WebUtility.HtmlEncode(before));
+            // Append the colored span with encoded inner text
+            parts.Append($"<span style=\"color:{m.Groups[1].Value}\">{WebUtility.HtmlEncode(m.Groups[2].Value)}</span>");
+            pos = m.Index + m.Length;
+        }
+        parts.Append(WebUtility.HtmlEncode(text[pos..]));
+
+        // Game data contains literal backslash-n, not real newlines
+        parts.Replace("\\n", "<br/>");
+        return parts.ToString();
     }
 
     private static readonly System.Text.RegularExpressions.Regex _damageDiceRegex =
@@ -433,14 +463,20 @@ public class ItemController : Controller
         }
     }
 
-    private static List<EffectInfo> GetEffectNames(IPropertyCollection props, out ClickieInfo clickie, out EffectContext effectCtx, out string boundLine, out int? minLevelFromEffects, out bool isExclusive)
+    private record ResolvedEffects(
+        List<EffectInfo> Effects,
+        List<string> AugmentSlots,
+        ClickieInfo Clickie,
+        EffectContext EffectCtx,
+        string BoundLine,
+        int? MinLevel,
+        bool IsExclusive);
+
+    private static ResolvedEffects ResolveEffects(IPropertyCollection props)
     {
-        clickie = null;
-        boundLine = null;
-        minLevelFromEffects = null;
-        isExclusive = false;
         var effectsArray = props.GetArrayProperty((uint)DdoProperty.Effect_OnCreationEffects);
-        if (effectsArray == null) { effectCtx = new EffectContext(props); return new List<EffectInfo>(); }
+        if (effectsArray == null)
+            return new(new(), new(), null, new EffectContext(props), null, null, false);
 
         var canBeUsed = props.GetBytePropertyValue((uint)DdoProperty.Usage_CanBeUsed) == 1;
         var ctx = new EffectContext(props);
@@ -497,10 +533,12 @@ public class ItemController : Controller
         // Apply static mutators now that Treasure_BaseLevel is established.
         ApplyStaticMutators(ctx);
 
-        effectCtx = ctx;
-
         // Pass 2: resolve each effect's display name using the fully-populated context
-        var names = new List<EffectInfo>();
+        var effects = new List<EffectInfo>();
+        var augmentSlots = new List<string>();
+        string boundLine = null;
+        int? minLevel = null;
+        bool isExclusive = false;
         ClickieInfo partialClickie = null;
         int? maxCharges = null;
         int? dailyRecharge = null;
@@ -522,7 +560,7 @@ public class ItemController : Controller
             // "Required Level: N" → shown as the Minimum Level field, not as an effect.
             if (resolved.Name.StartsWith("Required Level:", StringComparison.OrdinalIgnoreCase)) {
                 if (int.TryParse(resolved.Name.AsSpan("Required Level:".Length).Trim(), out var lvl))
-                    minLevelFromEffects = lvl;
+                    minLevel = lvl;
                 continue;
             }
 
@@ -551,26 +589,29 @@ public class ItemController : Controller
                 continue;
             }
 
-            // Only display effects the game client shows to the player.
-            // Exception: augment slot effects have IsDisplayedOnClient = 0 but the game always
-            // shows them under the Augments section, so let them through.
+            // Augment slot effects go into AugmentSlots, not Effects.
+            // These have IsDisplayedOnClient = 0 but the game always shows them under Augments.
             var trimmedName = resolved.Name.TrimEnd();
             var trimmedLower = trimmedName.ToLowerInvariant();
-            var isAugmentSlotEffect = trimmedLower.EndsWith("augment slot")
+            if (trimmedLower.EndsWith("augment slot")
                 || trimmedLower.StartsWith("lamordia:")
-                || trimmedLower.StartsWith("isle of dread");
-            if (!isAugmentSlotEffect &&
-                entry.Props != null &&
+                || trimmedLower.StartsWith("isle of dread")) {
+                augmentSlots.Add(trimmedName);
+                continue;
+            }
+
+            if (entry.Props != null &&
                 entry.Props.GetBytePropertyValue((uint)DdoProperty.Effect_IsDisplayedOnClient) != 1)
                 continue;
 
-            names.Add(resolved);
+            effects.Add(resolved);
         }
 
+        ClickieInfo clickie = null;
         if (partialClickie != null)
             clickie = partialClickie with { MaxCharges = maxCharges, DailyRecharge = dailyRecharge };
 
-        return names;
+        return new(effects, augmentSlots, clickie, ctx, boundLine, minLevel, isExclusive);
     }
 
     private static ClickieInfo TryGetSpellDetails(uint effectDid)
@@ -770,7 +811,7 @@ public class ItemController : Controller
                         descs.Add(text);
                 }
 
-                return new SetBonusInfo { Name = name, Descriptions = descs };
+                return new SetBonusInfo { SetId = setId.Value, Name = name, Descriptions = descs };
             }
         }
         catch { }

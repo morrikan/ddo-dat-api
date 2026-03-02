@@ -20,15 +20,7 @@
         return "#88AAFF";
     }
 
-    static bool IsAugmentSlotName(string name)
-    {
-        var n = name.TrimEnd().ToLowerInvariant();
-        return n.EndsWith("augment slot")
-            || n.StartsWith("lamordia:")
-            || n.StartsWith("isle of dread");
-    }
-
-    static Microsoft.AspNetCore.Html.HtmlString RenderAugmentSlot(string slotName)
+static Microsoft.AspNetCore.Html.HtmlString RenderAugmentSlot(string slotName)
     {
         string color = AugmentSlotColor(slotName);
         var lower = slotName.ToLowerInvariant();
@@ -84,12 +76,11 @@
     <div class="top-row">
         <div class="item-table-wrapper">
             <table class="item-table">
-                <tr><th>Field</th><th>Value</th></tr>
                 @foreach (var row in Model.TableRows)
                 {
                     <tr>
                         <td class="fn">@row.Field</td>
-                        <td class="fv">@row.Value</td>
+                        <td class="fv">@if (row.IsHtml) { @Html.Raw(row.Value) } else { @row.Value }</td>
                     </tr>
                 }
             </table>
@@ -100,8 +91,7 @@
                 <ul class="elist">
                     @foreach (var effect in Model.Effects)
                     {
-                        var isAugSlot = IsAugmentSlotName(effect.Name);
-                        <li>@if (isAugSlot) { @Html.Raw(RenderAugmentSlot(effect.Name.TrimEnd())) } else { @effect.Name.TrimEnd() }@if (!string.IsNullOrEmpty(effect.Description)) {<span class="effect-desc">: @effect.Description</span>}</li>
+                        <li>@effect.Name.TrimEnd()@if (!string.IsNullOrEmpty(effect.Description)) {<span class="effect-desc">: @effect.Description</span>}</li>
                     }
                 </ul>
             }
@@ -126,7 +116,8 @@
                         <div class="set-bonus-name">@sb.Name</div>
                         @foreach (var desc in sb.Descriptions)
                         {
-                            @foreach (var line in desc.Split('\n'))
+                            @* Game data contains literal backslash-n, not real newlines *@
+                            @foreach (var line in desc.Split("\\n"))
                             {
                                 <div class="set-bonus-line">@line</div>
                             }
@@ -192,7 +183,7 @@
                                     {
                                         <div class="panel-main-bound-line">@Model.BoundLine</div>
                                     }
-
+                                    
                                     @if (Model.EquipsToLine != null)
                                     {
                                         <div class="panel-equip-slot">Equips to: @Model.EquipsToLine</div>
@@ -202,7 +193,7 @@
                                     {
                                         <div class="panel-main-proficiency">@Model.ProficiencyName</div>
                                     }
-
+                                    
                                     @if (Model.RaceExcluded.Count > 0)
                                     {
                                         <div class="panel-main-race-excluded">Race Absolutely Excluded: @string.Join(", ", Model.RaceExcluded)</div>
@@ -211,6 +202,16 @@
                                     @if (Model.MinLevel != null)
                                     {
                                         <div class="panel-main-min-level">Minimum Level: @Model.MinLevel</div>
+                                    }
+                                    
+                                    @if (Model.Binding != null)
+                                    {
+                                        <div class="panel-main-binding">@Model.Binding</div>
+                                    }
+
+                                    @if (Model.IsExclusive)
+                                    {
+                                        <div class="panel-main-exclusive">Exclusive</div>
                                     }
 
                                     @if (Model.IsShield)
@@ -265,17 +266,7 @@
                                             }
                                         </div>
                                     }
-
-                                    @if (Model.Binding != null)
-                                    {
-                                        <div class="panel-main-binding">@Model.Binding</div>
-                                    }
-
-                                    @if (Model.IsExclusive)
-                                    {
-                                        <div class="panel-main-exclusive">Exclusive</div>
-                                    }
-
+                                    
                                     @if (Model.IsArmor)
                                     {
                                         <div class="panel-main-armor">
@@ -327,14 +318,10 @@
                                         </div>
                                     }
 
-                                    @{
-                                        var regularEffects = Model.Effects.Where(e => !IsAugmentSlotName(e.Name)).ToList();
-                                        var augmentEffects = Model.Effects.Where(e => IsAugmentSlotName(e.Name)).ToList();
-                                    }
-                                    @if (regularEffects.Count > 0)
+                                    @if (Model.Effects.Count > 0)
                                     {
                                         <div class="panel-main-effect-list">
-                                            @foreach (var effect in regularEffects)
+                                            @foreach (var effect in Model.Effects)
                                             {
                                                 <div class="panel-main-effect">
                                                     <div class="panel-main-effect-list-name">@effect.Name.TrimEnd()@if (!string.IsNullOrEmpty(effect.Description)) {<span class="effect-desc">: @effect.Description</span>}</div>
@@ -343,16 +330,10 @@
                                         </div>
                                     }
 
-                                    @if (augmentEffects.Count > 0 || Model.AugmentSlots.Count > 0)
+                                    @if (Model.AugmentSlots.Count > 0)
                                     {
                                         <div class="panel-main-effect-list">
                                             <div class="panel-main-effect-header">Augments:</div>
-                                            @foreach (var effect in augmentEffects)
-                                            {
-                                                <div class="panel-main-effect">
-                                                    <div class="panel-main-effect-list-name">@Html.Raw(RenderAugmentSlot(effect.Name.TrimEnd()))<span class="panel-augment-empty">: Empty</span>@* TODO: replace with actual fill when rendering instances *@</div>
-                                                </div>
-                                            }
                                             @foreach (var slot in Model.AugmentSlots)
                                             {
                                                 <div class="panel-main-effect">
@@ -362,13 +343,18 @@
                                         </div>
                                     }
 
+                                    @if (Model.SetBonus1 != null || Model.SetBonus2 != null)
+                                    {
+                                        <div class="panel-main-set-bonus-header">Set Bonuses:</div>
+                                    }
                                     @foreach (var sb in new[] { Model.SetBonus1, Model.SetBonus2 }.Where(s => s != null))
                                     {
                                         <div class="panel-main-set-bonus">
                                             <div class="panel-main-set-bonus-name">@sb.Name:</div>
                                             @foreach (var desc in sb.Descriptions)
                                             {
-                                                var lines = desc.Split('\n');
+                                                @* Game data contains literal backslash-n, not real newlines *@
+                                                var lines = desc.Split("\\n");
                                                 <div class="panel-main-set-bonus-line panel-set-bonus-tier">@lines[0]</div>
                                                 @for (int li = 1; li < lines.Length; li++)
                                                 {
@@ -393,7 +379,7 @@
 
                                     @if (!string.IsNullOrWhiteSpace(Model.Description))
                                     {
-                                        <div class="panel-main-description">@Model.Description</div>
+                                        <div class="panel-main-description">@Html.Raw(Model.Description)</div>
                                     }
                                 </div>
                             </div>

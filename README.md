@@ -105,6 +105,8 @@ Supported item types:
 
 All types show: minimum level, binding, clickie spells (with icon, caster level, charges, recharge), effects, augment slots, set bonuses, material, durability, weight, and recipes.
 
+![Item Viewer Sample](images/item-viewer-sample.png)
+
 Example: `http://localhost:5138/Item/id/0x7902F2C7`
 
 ## Project Structure

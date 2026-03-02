@@ -1,9 +1,14 @@
 import puppeteer from 'puppeteer';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const id = process.argv[2];
+const args = process.argv.slice(2);
+const full = args.includes('--full');
+const id = args.find(a => !a.startsWith('--'));
 if (!id) {
-    console.error('Usage: node render-panel.mjs <item-id>');
+    console.error('Usage: node render-panel.mjs <item-id> [--full]');
     console.error('Example: node render-panel.mjs 0x7902F2C7');
+    console.error('         node render-panel.mjs 0x7902F2C7 --full');
     process.exit(1);
 }
 
@@ -12,10 +17,15 @@ const page = await browser.newPage();
 await page.setViewport({ width: 1400, height: 1200 });
 await page.goto(`http://localhost:5138/Item/id/${id}`, { waitUntil: 'networkidle0' });
 
-// Screenshot just the mock-side panel
-const panel = await page.$('.mock-side');
-const outPath = new URL(`./temp/render-${id}.png`, import.meta.url).pathname;
-await panel.screenshot({ path: outPath });
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const outPath = join(__dirname, 'temp', `render-${id}.png`);
+
+if (full) {
+    await page.screenshot({ path: outPath, fullPage: true });
+} else {
+    const panel = await page.$('.mock-side');
+    await panel.screenshot({ path: outPath });
+}
 
 await browser.close();
 console.log(`Saved to ${outPath}`);
